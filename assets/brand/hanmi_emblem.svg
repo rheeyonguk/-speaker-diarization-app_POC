@@ -1,0 +1,8 @@
+<svg xmlns="http://www.w3.org/2000/svg" viewBox="0 0 240 104" role="img" aria-label="Hanmi">
+  <!-- Reconstructed from the public Hanmi CI description: single red colour, oval (medicine) emblem,
+       white italic "Hanmi" wordmark. Replace with the official artwork file when available. -->
+  <ellipse cx="120" cy="52" rx="116" ry="48" fill="#E12319"/>
+  <text x="120" y="68" text-anchor="middle" fill="#FFFFFF"
+        font-family="Arial, Helvetica, 'Malgun Gothic', sans-serif" font-size="48" font-weight="700"
+        font-style="italic" letter-spacing="-1">Hanmi</text>
+</svg>

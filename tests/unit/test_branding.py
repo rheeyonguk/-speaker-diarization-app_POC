@@ -10,11 +10,11 @@ def _lum(h):
 
 
 def test_shades_go_light_to_dark():
-    s = shades("#0b3d91")
+    s = shades("#e12319")
     order = ["c50", "c100", "c200", "c300", "c400", "c500", "c600", "c700", "c800", "c900", "c950"]
     lums = [_lum(s[k]) for k in order]
     assert lums == sorted(lums, reverse=True)
-    assert s["c600"] == "#0b3d91"
+    assert s["c600"] == "#e12319"
 
 
 def test_default_brand_and_title():
@@ -23,7 +23,9 @@ def test_default_brand_and_title():
     h = header_html(cfg)
     assert "한미약품" in h and "AI 회의록" in h and "외부 전송 없음" in h
     assert "사내 전용" in footer_html(cfg)
+    assert cfg.ui.brand.primary_color == "#e12319"           # Hanmi CI red
     assert cfg.ui.brand.primary_color in make_css(cfg)
+    assert "data:image/svg+xml;base64," in h                 # bundled Hanmi emblem is embedded
 
 
 def test_brand_is_configurable_and_escaped(tmp_path):

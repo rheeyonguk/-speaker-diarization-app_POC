@@ -134,16 +134,16 @@ class ExportConfig:
 @dataclass
 class BrandConfig:
     company: str = "한미약품"
+    org_label: str = "AX PoC · 사내 전용"
     app_title: str = "AI 회의록"
     subtitle: str = "한국어 회의 음성 → 화자별 회의록 자동 생성 · 등록 화자 자동 식별"
-    org_label: str = "AX PoC · 사내 전용"
     security_badge: str = "로컬 처리 · 외부 전송 없음"
     badges: list = field(default_factory=lambda: ["WhisperX STT", "pyannote 화자 분리", "WeSpeaker 화자 식별"])
     footer: str = "모든 음성·화자 정보는 이 PC 안에서만 처리·저장됩니다. 자동 생성 결과는 검토 후 사용하세요."
-    primary_color: str = "#0b3d91"   # placeholder - replace with the official CI HEX
-    accent_color: str = "#0091d5"    # placeholder - replace with the official CI HEX
-    logo_path: Optional[str] = None  # official logo file (png/svg), e.g. assets/brand/logo.png
-    favicon_path: Optional[str] = None
+    primary_color: str = "#e12319"   # Hanmi CI single red
+    accent_color: str = "#333333"    # neutral charcoal for text / secondary accents
+    logo_path: Optional[str] = "assets/brand/hanmi_emblem.svg"
+    favicon_path: Optional[str] = "assets/brand/hanmi_emblem.svg"
 
 
 @dataclass

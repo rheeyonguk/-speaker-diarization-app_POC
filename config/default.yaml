@@ -100,14 +100,13 @@ ui:
   max_file_size: 4gb
   brand:                       # look & feel (title, colours, logo) - no code change needed
     company: 한미약품
+    org_label: AX PoC · 사내 전용
     app_title: AI 회의록
     subtitle: 한국어 회의 음성 → 화자별 회의록 자동 생성 · 등록 화자 자동 식별
-    org_label: AX PoC · 사내 전용
     security_badge: 로컬 처리 · 외부 전송 없음
     badges: [WhisperX STT, pyannote 화자 분리, WeSpeaker 화자 식별]
     footer: 모든 음성·화자 정보는 이 PC 안에서만 처리·저장됩니다. 자동 생성 결과는 검토 후 사용하세요.
-    # Placeholder deep-blue palette. Replace with the official CI HEX values from the brand guide.
-    primary_color: "#0b3d91"
-    accent_color: "#0091d5"
-    logo_path: null            # e.g. assets/brand/logo.png (official CI file, white background works best)
-    favicon_path: null         # e.g. assets/brand/favicon.png
+    primary_color: "#e12319"     # Hanmi CI: single red
+    accent_color: "#333333"      # neutral charcoal
+    logo_path: assets/brand/hanmi_emblem.svg     # red oval emblem + white italic "Hanmi" wordmark
+    favicon_path: assets/brand/hanmi_emblem.svg

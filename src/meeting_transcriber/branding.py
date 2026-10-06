@@ -1,8 +1,9 @@
 """Corporate look & feel for the Gradio UI (colours, header, footer), driven by ``ui.brand`` config.
 
-The default palette is a neutral pharma-style deep blue. Replace ``primary_color`` /
-``accent_color`` with the official CI HEX values and point ``logo_path`` at the official logo file.
-No web fonts are loaded (system Korean fonts only) so the UI works offline and makes no external requests.
+Default = Hanmi Pharm CI: single red (#E12319) symbol colour on a clean white layout with charcoal
+text; the header shows the red oval emblem with the white italic "Hanmi" wordmark
+(assets/brand/hanmi_emblem.svg). No web fonts are loaded (system Korean fonts only) so the UI works
+offline and makes no external requests.
 """
 
 from __future__ import annotations
@@ -56,29 +57,31 @@ def make_theme(cfg: AppConfig):
     theme = gr.themes.Base(
         primary_hue=primary,
         secondary_hue=accent,
-        neutral_hue="slate",
+        neutral_hue="zinc",
         radius_size="md",
         font=FONT_STACK,
         font_mono=MONO_STACK,
     )
     return theme.set(
-        body_background_fill="#f3f6fa",
+        body_background_fill="#f6f6f7",
+        body_text_color="#222222",
         block_background_fill="#ffffff",
-        block_border_color="#e2e8f0",
-        block_shadow="0 1px 2px rgba(15, 23, 42, 0.05)",
+        block_border_color="#e5e5e8",
+        block_shadow="0 1px 2px rgba(0, 0, 0, 0.04)",
         block_radius="10px",
-        block_label_text_color=p["c800"],
-        block_title_text_color=p["c800"],
-        background_fill_secondary=p["c50"],
+        block_label_text_color="#333333",
+        block_title_text_color="#222222",
+        background_fill_secondary="#f7f7f8",
         button_primary_background_fill=p["c600"],
         button_primary_background_fill_hover=p["c700"],
         button_primary_border_color=p["c600"],
         button_primary_text_color="#ffffff",
         button_secondary_background_fill="#ffffff",
-        button_secondary_background_fill_hover=p["c50"],
-        button_secondary_text_color=p["c700"],
-        button_cancel_background_fill="#c62828",
-        button_cancel_background_fill_hover="#a61f1f",
+        button_secondary_background_fill_hover="#f3f3f4",
+        button_secondary_text_color="#333333",
+        button_secondary_border_color="#d4d4d8",
+        button_cancel_background_fill="#3f3f46",
+        button_cancel_background_fill_hover="#27272a",
         button_cancel_text_color="#ffffff",
         button_large_radius="8px",
         input_radius="8px",
@@ -89,52 +92,53 @@ def make_theme(cfg: AppConfig):
         color_accent=p["c600"],
         color_accent_soft=p["c50"],
         border_color_accent=p["c300"],
-        border_color_primary=p["c200"],
-        loader_color=a["c500"],
+        border_color_primary="#e5e5e8",
+        loader_color=p["c600"],
         link_text_color=p["c600"],
         table_even_background_fill="#ffffff",
-        table_odd_background_fill=p["c50"],
+        table_odd_background_fill="#fafafa",
     )
-
 
 def make_css(cfg: AppConfig) -> str:
     b = cfg.ui.brand
     p = shades(b.primary_color)
-    a = shades(b.accent_color)
+    ink = b.accent_color
     return f"""
 .gradio-container {{ width: 100% !important; max-width: 1360px !important; margin: 0 auto !important; }}
 .gradio-container .main {{ max-width: 1360px !important; }}
 .mt-header {{
-  background: linear-gradient(120deg, {p['c800']} 0%, {p['c600']} 58%, {a['c500']} 100%);
-  color: #fff; border-radius: 14px; padding: 22px 28px; margin-bottom: 6px;
-  box-shadow: 0 6px 18px rgba(11, 35, 80, 0.18);
+  background: #ffffff; border: 1px solid #e5e5e8; border-top: 5px solid {p['c600']};
+  border-radius: 12px; padding: 20px 28px 18px; margin-bottom: 6px;
+  box-shadow: 0 4px 14px rgba(0, 0, 0, 0.05);
 }}
-.mt-header, .mt-header * {{ color: #ffffff !important; }}
-.mt-header .mt-top {{ display: flex; align-items: center; gap: 14px; flex-wrap: wrap; }}
-.mt-header .mt-logo {{ height: 38px; background: #fff; border-radius: 8px; padding: 4px 8px; }}
-.mt-header .mt-company {{ font-size: 15px; font-weight: 700; letter-spacing: 0.08em; opacity: 0.95;
-  border: 1px solid rgba(255,255,255,0.55); border-radius: 999px; padding: 3px 12px; }}
-.mt-header .mt-title {{ font-size: 26px; font-weight: 800; letter-spacing: -0.01em; margin: 0; color: #fff; }}
-.mt-header .mt-sub {{ margin-top: 8px; font-size: 14.5px; opacity: 0.92; }}
+.mt-header .mt-top {{ display: flex; align-items: center; gap: 18px; flex-wrap: wrap; }}
+.mt-header .mt-logo {{ height: 46px; width: auto; display: block; }}
+.mt-header .mt-sep {{ width: 1px; height: 40px; background: #d9d9de; }}
+.mt-header .mt-names {{ display: flex; flex-direction: column; line-height: 1.15; }}
+.mt-header .mt-company {{ font-size: 13.5px; font-weight: 700; color: {p['c600']} !important; letter-spacing: 0.02em; }}
+.mt-header .mt-company .mt-org {{ color: #8a8a93 !important; font-weight: 500; margin-left: 6px; }}
+.mt-header .mt-title {{ font-size: 27px; font-weight: 800; letter-spacing: -0.02em; margin: 2px 0 0; color: {ink} !important; }}
+.mt-header .mt-sub {{ margin-top: 12px; font-size: 14.5px; color: #55555e !important; }}
 .mt-header .mt-badges {{ margin-top: 12px; display: flex; gap: 8px; flex-wrap: wrap; }}
-.mt-header .mt-badge {{ background: rgba(255,255,255,0.16); border: 1px solid rgba(255,255,255,0.28);
+.mt-header .mt-badge {{ background: #f4f4f5; border: 1px solid #e4e4e7; color: #3f3f46 !important;
   border-radius: 999px; padding: 3px 11px; font-size: 12.5px; }}
-.mt-header .mt-badge.mt-secure {{ background: rgba(255,255,255,0.94); color: {p['c800']} !important; font-weight: 700; }}
+.mt-header .mt-badge.mt-secure {{ background: {p['c50']}; border-color: {p['c200']}; color: {p['c700']} !important;
+  font-weight: 700; }}
 .mt-steps {{ display: flex; gap: 8px; flex-wrap: wrap; margin: 4px 0 2px; }}
-.mt-steps .mt-step {{ flex: 1 1 160px; background: #fff; border: 1px solid #e2e8f0; border-left: 4px solid {p['c600']};
-  border-radius: 8px; padding: 8px 12px; font-size: 13px; color: #334155; }}
+.mt-steps .mt-step {{ flex: 1 1 160px; background: #fff; border: 1px solid #e5e5e8; border-top: 3px solid {p['c600']};
+  border-radius: 8px; padding: 8px 12px; font-size: 13px; color: #3f3f46; }}
 .mt-steps .mt-step b {{ display: block; color: {p['c600']}; font-size: 11px; letter-spacing: 0.08em; margin-bottom: 2px; }}
-.mt-section-title {{ font-size: 15px; font-weight: 700; color: {p['c800']}; margin: 6px 0 2px;
-  padding-left: 8px; border-left: 3px solid {a['c500']}; }}
-.mt-note {{ font-size: 13px; color: #475569; background: {p['c50']}; border: 1px solid {p['c100']};
-  border-radius: 8px; padding: 10px 14px; }}
-.mt-footer {{ text-align: center; color: #64748b; font-size: 12.5px; margin-top: 18px; padding-top: 12px;
-  border-top: 1px solid #e2e8f0; }}
+.mt-section-title {{ font-size: 15px; font-weight: 700; color: {ink}; margin: 6px 0 2px;
+  padding-left: 9px; border-left: 4px solid {p['c600']}; }}
+.mt-note {{ font-size: 13px; color: #4b4b55; background: #ffffff; border: 1px solid #e5e5e8;
+  border-left: 4px solid {p['c600']}; border-radius: 8px; padding: 10px 14px; }}
+.mt-footer {{ text-align: center; color: #8a8a93; font-size: 12.5px; margin-top: 18px; padding-top: 12px;
+  border-top: 1px solid #e5e5e8; }}
+.mt-footer b {{ color: {p['c600']}; }}
 .mt-run button, button.mt-run {{ font-size: 16px !important; font-weight: 700 !important; min-height: 48px; }}
-.tab-nav button.selected, button[role="tab"][aria-selected="true"] {{ color: {p['c700']} !important;
+.tab-nav button.selected, button[role="tab"][aria-selected="true"] {{ color: {p['c600']} !important;
   border-color: {p['c600']} !important; font-weight: 700; }}
 """
-
 
 def _logo_data_uri(cfg: AppConfig) -> Optional[str]:
     path = cfg.ui.brand.logo_path
@@ -156,16 +160,18 @@ def header_html(cfg: AppConfig) -> str:
     b = cfg.ui.brand
     e = html.escape
     logo = _logo_data_uri(cfg)
-    logo_html = f'<img class="mt-logo" src="{logo}" alt="{e(b.company)}"/>' if logo else ""
-    company_html = f'<span class="mt-company">{e(b.company)}</span>' if b.company and not logo else ""
+    logo_html = (f'<img class="mt-logo" src="{logo}" alt="{e(b.company)}"/><div class="mt-sep"></div>'
+                 if logo else "")
+    org = f'<span class="mt-org">{e(b.org_label)}</span>' if b.org_label else ""
     badges = "".join(f'<span class="mt-badge">{e(x)}</span>' for x in b.badges)
     return f"""
 <div class="mt-header">
-  <div class="mt-top">{logo_html}{company_html}<h1 class="mt-title">{e(b.app_title)}</h1></div>
+  <div class="mt-top">{logo_html}
+    <div class="mt-names"><span class="mt-company">{e(b.company)}{org}</span><h1 class="mt-title">{e(b.app_title)}</h1></div>
+  </div>
   <div class="mt-sub">{e(b.subtitle)}</div>
   <div class="mt-badges"><span class="mt-badge mt-secure">🔒 {e(b.security_badge)}</span>{badges}</div>
 </div>"""
-
 
 def steps_html() -> str:
     steps = [
@@ -180,9 +186,8 @@ def steps_html() -> str:
 
 def footer_html(cfg: AppConfig) -> str:
     b = cfg.ui.brand
-    parts = [p for p in (b.org_label, b.footer) if p]
-    return f'<div class="mt-footer">{" · ".join(html.escape(p) for p in parts)}</div>'
-
+    lead = f"<b>{html.escape(b.company)}</b> {html.escape(b.org_label)}".strip()
+    return f'<div class="mt-footer">{lead} · {html.escape(b.footer)}</div>'
 
 def favicon_path(cfg: AppConfig) -> Optional[str]:
     p = cfg.ui.brand.favicon_path

@@ -280,9 +280,9 @@ WeSpeaker 공식 recipe(`wespeaker/bin/score.py`)의 방식인 **cosine similari
 | `speaker_id.enrollment.keep_raw_audio` | true | false = 임베딩만 저장 |
 | `paths.enrollment_dir` / `output_dir` / `model_cache_dir` | data/speakers / outputs / null | |
 | `ui.server_name` | 127.0.0.1 | 로컬 전용 |
-| `ui.brand.*` | 한미약품 / AI 회의록 | 회사명·앱 제목·부제·배지·푸터·메인/보조 컬러·로고·파비콘 (`assets/brand/README.md`) |
+| `ui.brand.*` | 한미약품 / AI 회의록 / `#e12319` | 회사명·앱 제목·부제·배지·푸터·메인/보조 컬러·로고·파비콘 (`assets/brand/README.md`) |
 
-**UI 브랜딩:** 화면 타이틀·헤더·색상은 코드 수정 없이 `ui.brand` 설정으로 바꿀 수 있습니다. 기본 색상(`#0b3d91` 딥블루, `#0091d5` 보조)은 **공식 CI 값이 아닌 임시값**이므로 브랜드 가이드의 HEX 값으로 교체하세요. 웹폰트를 내려받지 않고 시스템 한글 폰트(Pretendard → 맑은 고딕 → Apple SD Gothic Neo)를 사용하므로 오프라인·사내망에서도 외부 요청이 발생하지 않습니다.
+**UI 브랜딩:** 한미약품 CI 적용 — 단색 CI Red(`#E12319`) 포인트 + 화이트 레이아웃 + 차콜 텍스트, 헤더에 레드 타원 엠블럼·흰색 이탤릭 워드마크 "Hanmi"(`assets/brand/hanmi_emblem.svg`, 공개 CI 구성 기준 재구성본), 브라우저 탭 아이콘 동일. 제목·색상·로고는 `ui.brand` 설정으로 변경 가능. 웹폰트 없이 시스템 한글 폰트만 사용해 외부 요청이 발생하지 않습니다.
 
 ---
 
