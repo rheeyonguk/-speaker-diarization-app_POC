@@ -13,6 +13,7 @@ from __future__ import annotations
 import copy
 import dataclasses
 import os
+import re
 from dataclasses import dataclass, field
 from pathlib import Path
 from typing import Any, Optional, get_args, get_origin, get_type_hints
@@ -131,10 +132,26 @@ class ExportConfig:
 
 
 @dataclass
+class BrandConfig:
+    company: str = "한미약품"
+    app_title: str = "AI 회의록"
+    subtitle: str = "한국어 회의 음성 → 화자별 회의록 자동 생성 · 등록 화자 자동 식별"
+    org_label: str = "AX PoC · 사내 전용"
+    security_badge: str = "로컬 처리 · 외부 전송 없음"
+    badges: list = field(default_factory=lambda: ["WhisperX STT", "pyannote 화자 분리", "WeSpeaker 화자 식별"])
+    footer: str = "모든 음성·화자 정보는 이 PC 안에서만 처리·저장됩니다. 자동 생성 결과는 검토 후 사용하세요."
+    primary_color: str = "#0b3d91"   # placeholder - replace with the official CI HEX
+    accent_color: str = "#0091d5"    # placeholder - replace with the official CI HEX
+    logo_path: Optional[str] = None  # official logo file (png/svg), e.g. assets/brand/logo.png
+    favicon_path: Optional[str] = None
+
+
+@dataclass
 class UiConfig:
     server_name: str = "127.0.0.1"
     server_port: int = 7860
     max_file_size: str = "4gb"
+    brand: BrandConfig = field(default_factory=BrandConfig)
 
 
 @dataclass
@@ -343,6 +360,7 @@ VALID_MODES = {"AUTO", "RANGE", "FIXED"}
 VALID_MATCHING = {"flexible", "strict_one_to_one", "argmax"}  # argmax = comparison baseline
 VALID_COMPUTE = {"auto", "default", "float16", "int8_float16", "int8", "float32", "bfloat16", "int8_bfloat16", "int8_float32"}
 VALID_FORMATS = {"txt", "json", "csv", "srt"}
+_HEX_RE = re.compile(r"^#[0-9a-fA-F]{6}$")
 
 
 def validate_config(cfg: AppConfig) -> None:
@@ -362,6 +380,10 @@ def validate_config(cfg: AppConfig) -> None:
         raise ConfigError("speaker_id.match_threshold 는 cosine 범위 [-1, 1] 이어야 합니다")
     if cfg.speaker_id.match_margin < 0:
         raise ConfigError("speaker_id.match_margin 은 0 이상이어야 합니다")
+    for key in ("primary_color", "accent_color"):
+        value = getattr(cfg.ui.brand, key)
+        if not _HEX_RE.match(value or ""):
+            raise ConfigError(f"ui.brand.{key} 는 #RRGGBB 형식이어야 합니다: {value!r}")
     bad = set(cfg.export.formats) - VALID_FORMATS
     if bad:
         raise ConfigError(f"export.formats 지원하지 않는 형식: {sorted(bad)}")

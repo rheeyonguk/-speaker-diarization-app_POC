@@ -136,9 +136,9 @@ python app/main.py --port 7870 --config config/local.yaml
 ```
 | 탭 | 기능 |
 |---|---|
-| 1. 전사 | 파일 업로드, Language(ko/auto/…), Speaker Count Mode(AUTO/RANGE/FIXED), Exact/Min/Max, Whisper Model, 등록 화자 식별 ON/OFF, (고급) 매칭 모드·threshold, 단계별 진행률(1.Audio preprocessing → 6.Export), Transcript / Speaker list / Similarity matrix / TXT·JSON·CSV·SRT 다운로드 |
-| 2. 화자 등록 | 이름 + 음성 여러 개 등록(같은 이름 재등록 시 샘플 추가), 재등록(덮어쓰기), 원본 음성 보관 여부, 등록 목록(샘플 수·사용 구간·유효 음성), 삭제, 원본 음성만 삭제, 저장 음성으로 재계산 |
-| 3. 진단 | Device, CUDA 사용 가능 여부, GPU 이름·메모리, torch/CUDA/cuDNN/CTranslate2 버전, Whisper·pyannote·WeSpeaker·정렬 모델, HF 토큰 설정 여부(값은 표시 안 함), 최근 실행의 검출 화자 수·처리 시간·오디오 길이·**RTF**·단계별 시간 |
+| 회의록 생성 | 파일 업로드, Language(ko/auto/…), Speaker Count Mode(AUTO/RANGE/FIXED), Exact/Min/Max, Whisper Model, 등록 화자 식별 ON/OFF, (고급) 매칭 모드·threshold, 단계별 진행률(1.Audio preprocessing → 6.Export), Transcript / Speaker list / Similarity matrix / TXT·JSON·CSV·SRT 다운로드 |
+| 화자 등록 | 이름 + 음성 여러 개 등록(같은 이름 재등록 시 샘플 추가), 재등록(덮어쓰기), 원본 음성 보관 여부, 등록 목록(샘플 수·사용 구간·유효 음성), 삭제, 원본 음성만 삭제, 저장 음성으로 재계산 |
+| 시스템 진단 | Device, CUDA 사용 가능 여부, GPU 이름·메모리, torch/CUDA/cuDNN/CTranslate2 버전, Whisper·pyannote·WeSpeaker·정렬 모델, HF 토큰 설정 여부(값은 표시 안 함), 최근 실행의 검출 화자 수·처리 시간·오디오 길이·**RTF**·단계별 시간 |
 
 ### 5.2 CLI
 ```bash
@@ -280,6 +280,9 @@ WeSpeaker 공식 recipe(`wespeaker/bin/score.py`)의 방식인 **cosine similari
 | `speaker_id.enrollment.keep_raw_audio` | true | false = 임베딩만 저장 |
 | `paths.enrollment_dir` / `output_dir` / `model_cache_dir` | data/speakers / outputs / null | |
 | `ui.server_name` | 127.0.0.1 | 로컬 전용 |
+| `ui.brand.*` | 한미약품 / AI 회의록 | 회사명·앱 제목·부제·배지·푸터·메인/보조 컬러·로고·파비콘 (`assets/brand/README.md`) |
+
+**UI 브랜딩:** 화면 타이틀·헤더·색상은 코드 수정 없이 `ui.brand` 설정으로 바꿀 수 있습니다. 기본 색상(`#0b3d91` 딥블루, `#0091d5` 보조)은 **공식 CI 값이 아닌 임시값**이므로 브랜드 가이드의 HEX 값으로 교체하세요. 웹폰트를 내려받지 않고 시스템 한글 폰트(Pretendard → 맑은 고딕 → Apple SD Gothic Neo)를 사용하므로 오프라인·사내망에서도 외부 요청이 발생하지 않습니다.
 
 ---
 
@@ -338,7 +341,7 @@ Voice embedding 은 생체정보에 준하는 개인정보로 취급하십시오
 |---|---|
 | 설치(uv / pip 해석기) | 성공, `uv pip check`: 166 패키지 호환, 충돌 없음 |
 | import / syntax | 전 모듈 import 성공, `compileall` 통과, ruff(E,F,W,B) 통과 |
-| `pytest` | **103 passed, 1 skipped**(실모델 E2E opt-in) |
+| `pytest` | **109 passed, 1 skipped**(실모델 E2E opt-in) |
 | upstream API 회귀 가드 | whisperx 3.8.6 / pyannote.audio 4.0.7 / WeSpeaker / faster-whisper 실제 설치본 시그니처 일치 |
 | pyannote 반환 객체 | 실제 `DiarizeOutput` 클래스로 변환·두 diarization 보존·overlap 계산 검증 |
 | WhisperX alignment | 실제 `whisperx.load_align_model` + `whisperx.align` 코드 경로를 **로컬 소형 랜덤 Wav2Vec2-CTC(한국어 문자 사전)** 로 실행 → 단어 타임스탬프 생성 → 화자 결합 → 4개 형식 export |
@@ -384,9 +387,10 @@ RUN_INTEGRATION=1 MT_TEST_AUDIO=회의.wav MT_TEST_NUM_SPEAKERS=3 MT_TEST_ENROLL
 ## 16. 프로젝트 구조
 ```
 app/main.py                         Gradio 진입점
+assets/brand/                       로고·파비콘 배치 위치(안내 README)
 config/default.yaml                 전체 설정(주석)
 src/meeting_transcriber/
-  config.py  device.py  errors.py  logging_utils.py  cli.py  ui.py
+  config.py  device.py  errors.py  logging_utils.py  cli.py  ui.py  branding.py(테마·헤더·푸터)
   audio/          io.py(ffprobe/ffmpeg)  preprocess.py(정규화, noise hook)
   asr/            whisperx_asr.py(전사 + 정렬)
   diarization/    pyannote_diarizer.py  types.py(overlap/exclusive 결과 모델)

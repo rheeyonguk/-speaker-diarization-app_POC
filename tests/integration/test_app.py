@@ -17,7 +17,7 @@ def _free_port():
 @pytest.fixture(scope="module")
 def app_url(tmp_path_factory):
     from meeting_transcriber.config import load_config
-    from meeting_transcriber.ui import build_app
+    from meeting_transcriber.ui import build_app, launch_kwargs
 
     tmp = tmp_path_factory.mktemp("app")
     cfg = load_config(env={})
@@ -29,7 +29,7 @@ def app_url(tmp_path_factory):
     demo.queue(default_concurrency_limit=1)
     port = _free_port()
     demo.launch(server_name="127.0.0.1", server_port=port, prevent_thread_lock=True, quiet=True,
-                allowed_paths=[str(tmp / "outputs")])
+                allowed_paths=[str(tmp / "outputs")], **launch_kwargs(cfg))
     yield f"http://127.0.0.1:{port}/"
     demo.close()
 
@@ -43,6 +43,9 @@ def test_app_serves_three_tabs(app_url):
     assert any("Enrollment" in (x or "") for x in labels)
     assert any("Diagnostics" in (x or "") for x in labels)
     assert cfg.get("analytics_enabled") is False
+    assert cfg.get("title") == "한미약품 AI 회의록"
+    htmls = " ".join(str(c.get("props", {}).get("value", "")) for c in cfg["components"] if c.get("type") == "html")
+    assert "mt-header" in htmls and "AI 회의록" in htmls and "외부 전송 없음" in htmls
 
 
 def test_upload_and_run_returns_readable_error(app_url, tmp_path, write_wav):

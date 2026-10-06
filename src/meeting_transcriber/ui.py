@@ -2,6 +2,7 @@
 
 from __future__ import annotations
 
+import html
 import threading
 import traceback
 from pathlib import Path
@@ -15,6 +16,7 @@ logger = get_logger(__name__)
 
 LANGUAGES = [("한국어 (ko)", "ko"), ("자동 감지", "auto"), ("English (en)", "en"), ("日本語 (ja)", "ja"), ("中文 (zh)", "zh")]
 WHISPER_MODELS = ["large-v3", "large-v3-turbo", "medium", "small"]
+SPEAKER_MODES = [("자동 추정 (AUTO)", "AUTO"), ("범위 지정 (RANGE)", "RANGE"), ("인원 고정 (FIXED)", "FIXED")]
 SPEAKER_HEADERS = ["클러스터", "최종 화자", "상태", "유사도(cos)", "최고 후보", "후보 유사도", "margin", "발화(초)", "근거(초)", "사유"]
 PROFILE_HEADERS = ["이름", "ID", "샘플 수", "사용 구간", "유효 음성(초)", "원본 음성 보관", "임베딩 모델", "갱신"]
 
@@ -29,6 +31,7 @@ def _fmt(v, nd=3):
 def build_app(cfg: AppConfig):
     import gradio as gr
 
+    from .branding import footer_html, header_html, page_title, steps_html
     from .device import collect_diagnostics
     from .export.writers import render_txt
     from .pipeline import STAGES, MeetingTranscriber, RunRequest
@@ -181,78 +184,115 @@ def build_app(cfg: AppConfig):
         return info
 
     # ------------------------------------------------------------------ layout
-    with gr.Blocks(title="한국어 회의 다화자 전사 PoC", analytics_enabled=False) as demo:
-        gr.Markdown("## 한국어 회의 다화자 전사 (WhisperX → pyannote Community-1 → WeSpeaker 화자 식별)\n"
-                    "모든 추론은 로컬에서 수행됩니다. 결과는 자동 생성물이므로 검토 후 사용하세요.")
-        with gr.Tab("1. 전사 (Transcription)"):
-            with gr.Row():
-                with gr.Column(scale=1):
-                    f_in = gr.File(label="회의 음성/영상 (WAV, MP3, M4A, MP4, MOV)",
-                                   file_types=[".wav", ".mp3", ".m4a", ".mp4", ".mov"], type="filepath")
-                    lang = gr.Dropdown(LANGUAGES, value=cfg.asr.language, label="Language")
-                    mode = gr.Radio(["AUTO", "RANGE", "FIXED"], value=cfg.diarization.mode, label="Speaker Count Mode",
-                                    info="참석 인원을 정확히 알면 FIXED 가 가장 정확합니다.")
-                    num = gr.Slider(1, limit, value=cfg.diarization.num_speakers or min(2, limit), step=1,
-                                    label="Exact Speaker Count", visible=cfg.diarization.mode == "FIXED")
-                    min_s = gr.Slider(1, limit, value=cfg.diarization.min_speakers or 1, step=1, label="Min Speakers",
-                                      visible=cfg.diarization.mode == "RANGE")
-                    max_s = gr.Slider(1, limit, value=cfg.diarization.max_speakers or limit, step=1, label="Max Speakers",
-                                      visible=cfg.diarization.mode == "RANGE")
-                    model = gr.Dropdown(WHISPER_MODELS, value=cfg.asr.model, label="Whisper Model", allow_custom_value=True)
-                    identify = gr.Checkbox(value=cfg.speaker_id.enabled, label="Registered Speaker Identification (ON/OFF)")
-                    with gr.Accordion("화자 식별 고급 설정", open=False):
-                        matching = gr.Radio(["flexible", "strict_one_to_one", "argmax"], value=cfg.speaker_id.matching_mode,
-                                            label="Matching mode", info="argmax 는 비교용 baseline")
-                        thr = gr.Slider(-1.0, 1.0, value=cfg.speaker_id.match_threshold, step=0.01,
-                                        label="speaker_match_threshold (raw cosine, 환경별 calibration 필요)")
-                    run_btn = gr.Button("Run", variant="primary")
-                with gr.Column(scale=2):
-                    status = gr.Textbox(label="상태", lines=3)
-                    transcript = gr.Textbox(label="Transcript", lines=22, buttons=["copy"])
-            spk_table = gr.Dataframe(headers=SPEAKER_HEADERS, label="Speaker list / 식별 결과", interactive=False, wrap=True)
-            sim_table = gr.Dataframe(headers=["클러스터"], label="Speaker similarity (클러스터 × 등록 화자, raw cosine)",
-                                     interactive=False)
-            downloads = gr.File(label="Download (TXT / JSON / CSV / SRT)", file_count="multiple", interactive=False)
+    with gr.Blocks(title=page_title(cfg), analytics_enabled=False) as demo:
+        gr.HTML(header_html(cfg))
+        with gr.Tab("회의록 생성 (Transcription)"):
+            gr.HTML(steps_html())
+            with gr.Row(equal_height=False):
+                with gr.Column(scale=2, min_width=340):
+                    gr.HTML('<div class="mt-section-title">회의 파일</div>')
+                    f_in = gr.File(label="회의 음성/영상 업로드 (WAV · MP3 · M4A · MP4 · MOV)",
+                                   file_types=[".wav", ".mp3", ".m4a", ".mp4", ".mov"], type="filepath", height=170)
+                    gr.HTML('<div class="mt-section-title">인식 설정</div>')
+                    with gr.Group():
+                        lang = gr.Dropdown(LANGUAGES, value=cfg.asr.language, label="언어 (Language)")
+                        model = gr.Dropdown(WHISPER_MODELS, value=cfg.asr.model, label="음성인식 모델 (Whisper Model)",
+                                            info="GPU 가 없으면 large-v3-turbo 권장", allow_custom_value=True)
+                    gr.HTML('<div class="mt-section-title">참석자 수</div>')
+                    with gr.Group():
+                        mode = gr.Radio(SPEAKER_MODES, value=cfg.diarization.mode, label="화자 수 설정 (Speaker Count Mode)",
+                                        info="참석 인원을 정확히 알면 '인원 고정'이 가장 정확합니다.")
+                        num = gr.Slider(1, limit, value=cfg.diarization.num_speakers or min(2, limit), step=1,
+                                        label="참석 인원 (Exact Speaker Count)", visible=cfg.diarization.mode == "FIXED")
+                        min_s = gr.Slider(1, limit, value=cfg.diarization.min_speakers or 1, step=1,
+                                          label="최소 인원 (Min Speakers)", visible=cfg.diarization.mode == "RANGE")
+                        max_s = gr.Slider(1, limit, value=cfg.diarization.max_speakers or limit, step=1,
+                                          label="최대 인원 (Max Speakers)", visible=cfg.diarization.mode == "RANGE")
+                    gr.HTML('<div class="mt-section-title">화자 식별</div>')
+                    with gr.Group():
+                        identify = gr.Checkbox(value=cfg.speaker_id.enabled,
+                                               label="등록 화자 자동 식별 (Registered Speaker Identification ON/OFF)")
+                        with gr.Accordion("고급 설정 (매칭 방식 · 기준값)", open=False):
+                            matching = gr.Radio(["flexible", "strict_one_to_one", "argmax"],
+                                                value=cfg.speaker_id.matching_mode, label="매칭 방식 (Matching mode)",
+                                                info="argmax 는 비교용 baseline")
+                            thr = gr.Slider(-1.0, 1.0, value=cfg.speaker_id.match_threshold, step=0.01,
+                                            label="화자 일치 기준값 (speaker_match_threshold, 환경별 calibration 필요)")
+                    run_btn = gr.Button("회의록 생성 (Run)", variant="primary", size="lg", elem_classes=["mt-run"])
+                with gr.Column(scale=3, min_width=420):
+                    gr.HTML('<div class="mt-section-title">진행 상태</div>')
+                    status = gr.Textbox(show_label=False, lines=3, placeholder="파일을 올리고 '회의록 생성'을 누르세요.")
+                    gr.HTML('<div class="mt-section-title">회의록 (Transcript)</div>')
+                    transcript = gr.Textbox(show_label=False, lines=24, buttons=["copy"],
+                                            placeholder="[시간] / 화자명 / 발화 내용 형식으로 표시됩니다.")
+            gr.HTML('<div class="mt-section-title">화자 식별 결과 (Speaker list)</div>')
+            spk_table = gr.Dataframe(headers=SPEAKER_HEADERS, show_label=False, interactive=False, wrap=True)
+            with gr.Accordion("화자 유사도 행렬 (Speaker similarity: 클러스터 × 등록 화자, raw cosine)", open=False):
+                sim_table = gr.Dataframe(headers=["클러스터"], show_label=False, interactive=False)
+            gr.HTML('<div class="mt-section-title">결과 파일 다운로드</div>')
+            downloads = gr.File(label="TXT · JSON · CSV · SRT", file_count="multiple", interactive=False, height=120)
             mode.change(on_mode, mode, [num, min_s, max_s])
             run_btn.click(run_transcription,
                           [f_in, lang, mode, num, min_s, max_s, model, identify, matching, thr],
                           [status, transcript, spk_table, sim_table, downloads])
 
-        with gr.Tab("2. 화자 등록 (Speaker Enrollment)"):
-            gr.Markdown("한 사람당 **3개 이상, 각 10~30초**의 조용한 환경 발화를 권장합니다. "
-                        "같은 이름으로 다시 등록하면 샘플이 **추가**되고, '재등록(덮어쓰기)'를 체크하면 기존 프로필을 교체합니다. "
-                        "음성/임베딩은 이 PC의 `" + str(cfg.enrollment_dir) + "` 에만 저장됩니다.")
+        with gr.Tab("화자 등록 (Speaker Enrollment)"):
+            gr.HTML('<div class="mt-note">한 사람당 <b>3개 이상, 각 10~30초</b>의 조용한 환경 발화를 권장합니다. '
+                    "같은 이름으로 다시 등록하면 샘플이 <b>추가</b>되고, '재등록(덮어쓰기)'을 체크하면 기존 프로필을 교체합니다. "
+                    "등록 음성과 음성 특징값은 이 PC(<code>" + html.escape(str(cfg.enrollment_dir)) + "</code>)에만 저장됩니다.</div>")
+            with gr.Row(equal_height=False):
+                with gr.Column():
+                    gr.HTML('<div class="mt-section-title">신규 등록 / 샘플 추가</div>')
+                    with gr.Group():
+                        e_name = gr.Textbox(label="이름 (Speaker Name)", placeholder="예: 홍길동")
+                        e_files = gr.File(label="등록 음성 업로드 (Enrollment Audio, 여러 개 선택 가능)", file_count="multiple",
+                                          file_types=[".wav", ".mp3", ".m4a", ".mp4", ".mov", ".flac"], type="filepath",
+                                          height=150)
+                        e_replace = gr.Checkbox(label="재등록 - 기존 프로필 덮어쓰기 (Re-enroll)", value=False)
+                        e_keep = gr.Checkbox(label="원본 등록 음성 보관 (모델 변경 시 재계산용)",
+                                             value=cfg.speaker_id.enrollment.keep_raw_audio)
+                    e_btn = gr.Button("화자 등록", variant="primary", size="lg", elem_classes=["mt-run"])
+                with gr.Column():
+                    gr.HTML('<div class="mt-section-title">등록 화자 관리</div>')
+                    with gr.Group():
+                        sel = gr.Dropdown(choices=profile_choices(), label="화자 선택", value=None)
+                        with gr.Row():
+                            re_btn = gr.Button("저장 음성으로 재계산", variant="secondary")
+                            raw_btn = gr.Button("원본 음성만 삭제", variant="secondary")
+                            del_btn = gr.Button("프로필 삭제 (Delete)", variant="stop")
+                    e_status = gr.Textbox(label="처리 결과", lines=6)
+            gr.HTML('<div class="mt-section-title">등록 화자 목록 (Registered Speaker List)</div>')
             with gr.Row():
-                with gr.Column():
-                    e_name = gr.Textbox(label="Speaker Name", placeholder="예: 이용욱")
-                    e_files = gr.File(label="Enrollment Audio Upload", file_count="multiple",
-                                      file_types=[".wav", ".mp3", ".m4a", ".mp4", ".mov", ".flac"], type="filepath")
-                    e_replace = gr.Checkbox(label="재등록(덮어쓰기, Re-enroll)", value=False)
-                    e_keep = gr.Checkbox(label="원본 등록 음성 보관 (모델 변경 시 재계산용)", value=cfg.speaker_id.enrollment.keep_raw_audio)
-                    e_btn = gr.Button("등록", variant="primary")
-                with gr.Column():
-                    e_status = gr.Textbox(label="결과", lines=6)
-                    sel = gr.Dropdown(choices=profile_choices(), label="화자 선택", value=None)
-                    with gr.Row():
-                        del_btn = gr.Button("Delete (프로필 삭제)", variant="stop")
-                        raw_btn = gr.Button("원본 음성만 삭제")
-                        re_btn = gr.Button("저장 음성으로 재계산")
-                    refresh = gr.Button("목록 새로고침")
-            profiles = gr.Dataframe(value=profile_rows(), headers=PROFILE_HEADERS, label="Registered Speaker List",
-                                    interactive=False)
+                refresh = gr.Button("목록 새로고침", variant="secondary", size="sm", scale=0, min_width=140)
+            profiles = gr.Dataframe(value=profile_rows(), headers=PROFILE_HEADERS, show_label=False, interactive=False)
             e_btn.click(enroll, [e_name, e_files, e_replace, e_keep], [e_status, profiles, sel])
             del_btn.click(delete_profile, sel, [e_status, profiles, sel])
             raw_btn.click(delete_raw, sel, [e_status, profiles])
             re_btn.click(reenroll_stored, sel, [e_status, profiles])
             refresh.click(lambda: (profile_rows(), gr.update(choices=profile_choices())), None, [profiles, sel])
 
-        with gr.Tab("3. 진단 (Diagnostics)") as diag_tab:
-            d_btn = gr.Button("새로고침")
+        with gr.Tab("시스템 진단 (Diagnostics)") as diag_tab:
+            gr.HTML('<div class="mt-note">GPU/CUDA 인식 여부, 라이브러리·모델 버전, 최근 실행의 화자 수·처리 시간·'
+                    'RTF(처리시간 ÷ 오디오 길이)를 확인합니다. HF 토큰은 설정 여부만 표시합니다.</div>')
+            d_btn = gr.Button("새로고침", variant="secondary")
             d_json = gr.JSON(label="Device / CUDA / Models / 최근 실행")
             d_btn.click(diagnostics, None, d_json)
             # Gradio renders hidden tabs lazily: refresh when the tab is opened, not on page load
             diag_tab.select(diagnostics, None, d_json)
+        gr.HTML(footer_html(cfg))
     return demo
+
+
+def launch_kwargs(cfg: AppConfig) -> dict:
+    """Look & feel passed to ``Blocks.launch`` (Gradio 6 takes theme/css at launch time)."""
+    from .branding import favicon_path, make_css, make_theme
+
+    return {
+        "theme": make_theme(cfg),
+        "css": make_css(cfg),
+        "footer_links": [],  # hide the Gradio/API footer links; our own footer is rendered in the page
+        "favicon_path": favicon_path(cfg),
+    }
 
 
 def launch(cfg: AppConfig, server_name: Optional[str] = None, server_port: Optional[int] = None,
@@ -270,4 +310,5 @@ def launch(cfg: AppConfig, server_name: Optional[str] = None, server_port: Optio
         allowed_paths=[str(cfg.output_dir)],
         show_error=True,
         prevent_thread_lock=prevent_thread_lock,
+        **launch_kwargs(cfg),
     )
