@@ -1,0 +1,48 @@
+[build-system]
+requires = ["setuptools>=68", "wheel"]
+build-backend = "setuptools.build_meta"
+
+[project]
+name = "meeting-transcriber"
+version = "0.1.0"
+description = "Local Korean multi-speaker meeting transcription PoC: WhisperX + pyannote Community-1 + WeSpeaker speaker identification"
+readme = "README.md"
+# whisperx 3.8.6: >=3.10,<3.14 / pyannote.audio 4.x: >=3.10 / WeSpeaker classifiers: <=3.11
+# Tested on 3.11 (recommended).
+requires-python = ">=3.10,<3.13"
+license = { text = "Proprietary (PoC)" }
+dependencies = [
+    # ASR + forced alignment. 3.8.6 = latest stable release on PyPI (3.8.7rc1 is a pre-release).
+    # whisperx pins torch~=2.8.0 / torchaudio~=2.8.0 / torchcodec<0.8 and pulls faster-whisper>=1.2.0, ctranslate2>=4.5.
+    "whisperx==3.8.6",
+    # Community-1 requires pyannote.audio 4.x (DiarizeOutput API).
+    "pyannote.audio>=4.0.7,<5",
+    # WeSpeaker is not published on PyPI. Pinned to an immutable commit (not a moving branch);
+    # see README "의존성 결정 근거".
+    "wespeaker @ git+https://github.com/wenet-e2e/wespeaker.git@9fecd6cb4f47475d01761d87c826298dff4ef18c",
+    "gradio>=6.17,<7",
+    "jiwer>=4.0,<5",
+    "python-dotenv>=1.0",
+    "pyyaml>=6.0",
+    "numpy>=2.1",
+    "scipy>=1.11",
+]
+
+[project.optional-dependencies]
+dev = ["pytest>=8"]
+
+[project.scripts]
+meeting-transcriber = "meeting_transcriber.cli:main"
+
+[tool.setuptools.packages.find]
+where = ["src"]
+
+[tool.pytest.ini_options]
+testpaths = ["tests"]
+markers = [
+    "integration: needs downloaded models, HF_TOKEN and real audio (opt-in via RUN_INTEGRATION=1)",
+]
+filterwarnings = [
+    "ignore::DeprecationWarning",
+    "ignore::UserWarning",
+]

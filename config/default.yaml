@@ -1,0 +1,100 @@
+# Default configuration. Override with:
+#   1) a YAML file given by env MT_CONFIG (only the keys you want to change), and/or
+#   2) env vars MT_<SECTION>__<KEY>  (e.g. MT_ASR__MODEL=large-v3-turbo)
+# Secrets (HF_TOKEN) are NEVER read from this file - only from the environment / .env.
+
+runtime:
+  device: auto                 # auto | cuda | cpu
+  device_index: 0
+  cpu_threads: 4
+  # Unload each model (and empty the CUDA cache) when its stage finishes.
+  # Keeps peak VRAM ~= the largest single model; costs model reload time on every run.
+  release_models_between_stages: true
+
+paths:
+  enrollment_dir: data/speakers
+  output_dir: outputs
+  model_cache_dir: null        # null = library defaults (~/.cache/huggingface, ~/.wespeaker)
+
+audio:
+  sample_rate: 16000           # internal processing rate (WhisperX / pyannote / WeSpeaker all expect 16 kHz)
+  channel_strategy: downmix    # downmix (all channels -> mono) | first (left/first channel only)
+  normalize: true              # peak normalization (gain only, no dynamics processing)
+  target_peak_dbfs: -1.0
+  noise_reduction: false       # hook only; OFF by default (can hurt STT & speaker embeddings)
+  max_duration_hours: 4.0
+  keep_intermediate_wav: false # keep the 16 kHz mono working copy in the job folder
+
+asr:
+  model: large-v3              # large-v3 | large-v3-turbo | medium | small ... (faster-whisper names)
+  compute_type: auto           # auto (cuda: float16, cpu: int8) | float16 | int8_float16 | int8 | float32
+  batch_size: 16               # lower (8/4) on OOM
+  language: ko                 # ISO code, or "auto" for language detection
+  vad_method: pyannote         # WhisperX VAD: pyannote (bundled weights) | silero (torch.hub download)
+  chunk_size: 30
+  beam_size: 5
+  initial_prompt: null         # optional domain vocabulary prompt
+
+alignment:
+  enabled: true
+  model_name: null             # null = WhisperX default for the language (ko: read from whisperx at runtime)
+  interpolate_method: nearest
+
+diarization:
+  model: pyannote/speaker-diarization-community-1
+  mode: AUTO                   # AUTO | RANGE | FIXED   (FIXED wins when headcount is known)
+  num_speakers: null           # FIXED
+  min_speakers: 2              # RANGE
+  max_speakers: 10             # RANGE
+  speaker_limit: 10            # upper bound accepted by UI/API validation (raise if you need more)
+  embedding_batch_size: null   # null = pipeline default; lower on OOM
+  segmentation_batch_size: null
+
+speaker_id:
+  enabled: true
+  # WeSpeaker pretrained model: a WeSpeaker hub name (english | chinese | vblinkp | vblinkf | campplus | eres2net | w2vbert2_mfa)
+  # or a local directory containing avg_model.pt + config.yaml.
+  # english = ResNet221-LM trained on VoxCeleb (model license follows VoxCeleb: CC BY 4.0 per WeSpeaker docs).
+  # vblinkf = SimAM-ResNet34, VoxBlink2 (multilingual) + VoxCeleb2 fine-tune: benchmark candidate for Korean,
+  #           check the VoxBlink2 dataset licence before company use.
+  wespeaker_model: english
+  # Raw cosine similarity in [-1, 1] (NOT WeSpeaker CLI's (cos+1)/2 rescaling).
+  # PoC starting value only - MUST be calibrated per environment (scripts/calibrate_threshold.py).
+  match_threshold: 0.5
+  match_margin: 0.05           # best - second best must exceed this, otherwise UNKNOWN (ambiguous)
+  matching_mode: flexible      # flexible | strict_one_to_one
+  # flexible mode: extra similarity required to map an additional (fragmented) cluster to an
+  # already-assigned person, and max seconds those two clusters may talk simultaneously.
+  fragment_extra_threshold: 0.05
+  fragment_max_cooccurrence_sec: 2.0
+  cohort_mean_path: null       # optional .npy mean vector for WeSpeaker-style mean-subtracted cosine
+  cluster_embedding:
+    min_segment_sec: 1.5       # prefer non-overlapped turns at least this long
+    fallback_min_segment_sec: 0.5
+    max_segment_sec: 10.0      # longer turns are split into windows of this size
+    max_segments: 20
+    max_total_sec: 120.0
+    min_total_sec: 1.0         # below this a cluster cannot be identified -> UNKNOWN
+    min_rms_dbfs: -45.0        # skip near-silent windows
+  enrollment:
+    vad: true                  # Silero VAD removes silence/non-speech before embedding (false only for pre-trimmed clips)
+    min_speech_sec: 3.0        # per sample, after VAD
+    recommended_total_speech_sec: 30.0
+    chunk_sec: 10.0            # long samples are split into chunks, one embedding per chunk
+    outlier_mad_k: 3.0         # robust z-score cut (median/MAD of leave-one-out similarities)
+    outlier_min_similarity: 0.2
+    keep_raw_audio: true       # false = delete enrollment audio right after embedding extraction
+
+assignment:
+  overlap_min_ratio: 0.3       # a word is flagged overlap if >= 30% of it lies in an overlap region
+  nearest_max_gap_sec: 1.0     # words outside any diarization turn take the nearest turn within this gap
+
+export:
+  formats: [txt, json, csv, srt]
+  txt_merge_gap_sec: 1.0       # merge consecutive same-speaker utterances in TXT when gap <= this
+  include_words_in_json: true
+
+ui:
+  server_name: 127.0.0.1       # local only by default (voice data stays on this machine)
+  server_port: 7860
+  max_file_size: 4gb

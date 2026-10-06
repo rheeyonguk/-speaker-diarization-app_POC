@@ -1,0 +1,43 @@
+# Secrets
+.env
+.env.*
+!.env.example
+
+# Python
+__pycache__/
+*.py[cod]
+*.egg-info/
+.venv/
+venv/
+.pytest_cache/
+build/
+dist/
+
+# Biometric / personal data: never commit voice samples or voice profiles
+data/speakers/*
+!data/speakers/.gitkeep
+data/eval/*
+!data/eval/.gitkeep
+
+# Run outputs (transcripts may contain confidential meeting content)
+outputs/*
+!outputs/.gitkeep
+
+# Local model caches
+models/
+.cache/
+
+# Media files anywhere in the repo
+*.wav
+*.mp3
+*.m4a
+*.mp4
+*.mov
+*.flac
+*.npy
+
+# OS / IDE
+.DS_Store
+Thumbs.db
+.idea/
+.vscode/
