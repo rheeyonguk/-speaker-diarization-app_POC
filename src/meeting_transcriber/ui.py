@@ -210,7 +210,8 @@ def build_app(cfg: AppConfig):
                     status = gr.Textbox(label="상태", lines=3)
                     transcript = gr.Textbox(label="Transcript", lines=22, buttons=["copy"])
             spk_table = gr.Dataframe(headers=SPEAKER_HEADERS, label="Speaker list / 식별 결과", interactive=False, wrap=True)
-            sim_table = gr.Dataframe(label="Speaker similarity (클러스터 × 등록 화자, raw cosine)", interactive=False)
+            sim_table = gr.Dataframe(headers=["클러스터"], label="Speaker similarity (클러스터 × 등록 화자, raw cosine)",
+                                     interactive=False)
             downloads = gr.File(label="Download (TXT / JSON / CSV / SRT)", file_count="multiple", interactive=False)
             mode.change(on_mode, mode, [num, min_s, max_s])
             run_btn.click(run_transcription,
@@ -245,11 +246,12 @@ def build_app(cfg: AppConfig):
             re_btn.click(reenroll_stored, sel, [e_status, profiles])
             refresh.click(lambda: (profile_rows(), gr.update(choices=profile_choices())), None, [profiles, sel])
 
-        with gr.Tab("3. 진단 (Diagnostics)"):
+        with gr.Tab("3. 진단 (Diagnostics)") as diag_tab:
             d_btn = gr.Button("새로고침")
             d_json = gr.JSON(label="Device / CUDA / Models / 최근 실행")
             d_btn.click(diagnostics, None, d_json)
-            demo.load(diagnostics, None, d_json)
+            # Gradio renders hidden tabs lazily: refresh when the tab is opened, not on page load
+            diag_tab.select(diagnostics, None, d_json)
     return demo
 
 
