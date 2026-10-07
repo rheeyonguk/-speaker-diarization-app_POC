@@ -28,7 +28,7 @@ from collections import Counter
 from dataclasses import dataclass
 from pathlib import Path
 from typing import Callable, Optional
-from urllib.parse import urlparse
+from urllib.parse import unquote, urlparse
 
 import numpy as np
 
@@ -61,12 +61,12 @@ _RESOURCE_NAME = re.compile(r"^[A-Za-z0-9][A-Za-z0-9-]{1,62}$")
 def normalize_endpoint(raw: str) -> tuple[str, list[str]]:
     """Accept what people copy from the portal and return the Speech REST base URL (+ notes).
 
-    Besides endpoint URLs this takes the Azure portal URL / resource ID of the account or its bare
+    Besides endpoint URLs this takes the Azure portal / Foundry portal URL, resource ID of the account or its bare
     name; those map to ``https://<name>.cognitiveservices.azure.com`` (the custom subdomain the portal
     assigns by default)."""
     notes: list[str] = []
     value = raw.strip()
-    account = _PORTAL_ACCOUNT.search(value)
+    account = _PORTAL_ACCOUNT.search(unquote(value))  # Foundry URLs may carry the resource ID percent-encoded
     if account or (_RESOURCE_NAME.match(value) and value.lower() != "localhost"):
         name = (account.group(1) if account else value).lower()
         notes.append(f"리소스 이름 '{name}' 으로 엔드포인트를 구성했습니다. 연결이 안 되면 포털 '키 및 엔드포인트'의 "

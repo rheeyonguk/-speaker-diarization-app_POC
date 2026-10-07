@@ -115,6 +115,11 @@ def test_normalize_endpoint(raw, expected):
     "resourceGroups/rg-poc/providers/Microsoft.CognitiveServices/accounts/Meeting-MAI-01/overview",
     "/subscriptions/00000000-0000-0000-0000-000000000000/resourceGroups/rg-poc/providers/"
     "Microsoft.CognitiveServices/accounts/meeting-mai-01",
+    # Foundry portal (ai.azure.com) project URL, plain and percent-encoded
+    "https://ai.azure.com/foundryProject/overview?wsid=/subscriptions/00000000-0000-0000-0000-000000000000/"
+    "resourceGroups/rg-poc/providers/Microsoft.CognitiveServices/accounts/meeting-mai-01&tid=11111111-2222",
+    "https://ai.azure.com/foundryProject/overview?wsid=%2Fsubscriptions%2F00000000%2FresourceGroups%2Frg-poc"
+    "%2Fproviders%2FMicrosoft.CognitiveServices%2Faccounts%2Fmeeting-mai-01&tid=11111111-2222",
     "meeting-mai-01",
 ])
 def test_portal_url_resource_id_or_name_map_to_speech_endpoint(raw):

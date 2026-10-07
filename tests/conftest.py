@@ -13,6 +13,10 @@ ROOT = Path(__file__).resolve().parents[1]
 sys.path.insert(0, str(ROOT / "src"))
 
 import meeting_transcriber  # noqa: E402,F401  (sets privacy env defaults)
+import meeting_transcriber.config as _mt_config  # noqa: E402
+
+# Tests must not pick up the developer's real .env (Azure key, HF token) from the project root.
+_mt_config.load_dotenv_if_present = lambda: None
 
 SR = 16000
 
