@@ -1,0 +1,57 @@
+# Evaluation manifest for scripts/evaluate.py  (paths relative to the repository root)
+# Generate synthetic scenarios with scripts/make_synthetic_meeting.py (each writes a scenario.yaml
+# you can paste here), or point to real recordings with a hand-labelled RTTM.
+# Reference RTTM speaker labels must be the *real names* used at enrollment; guests get any
+# other label (e.g. GUEST_1) and must be omitted from `enrolled`.
+scenarios:
+  - id: A_2spk
+    audio: data/eval/A/mixture.wav
+    reference_rttm: data/eval/A/reference.rttm
+    reference_text: data/eval/A/reference.txt
+    speaker_mode: FIXED
+    num_speakers: 2
+
+  - id: B_5spk
+    audio: data/eval/B/mixture.wav
+    reference_rttm: data/eval/B/reference.rttm
+    reference_text: data/eval/B/reference.txt
+    speaker_mode: FIXED
+    num_speakers: 5
+
+  - id: C_10spk
+    audio: data/eval/C/mixture.wav
+    reference_rttm: data/eval/C/reference.rttm
+    speaker_mode: FIXED
+    num_speakers: 10
+
+  - id: C_10spk_auto            # same audio, speaker count estimated
+    audio: data/eval/C/mixture.wav
+    reference_rttm: data/eval/C/reference.rttm
+    speaker_mode: RANGE
+    min_speakers: 2
+    max_speakers: 10
+
+  - id: D_8enrolled_2guests
+    audio: data/eval/D/mixture.wav
+    reference_rttm: data/eval/D/reference.rttm
+    speaker_mode: FIXED
+    num_speakers: 10
+    enrolled: [화자01, 화자02, 화자03, 화자04, 화자05, 화자06, 화자07, 화자08]   # guests NOT listed
+
+  - id: E_overlap
+    audio: data/eval/E/mixture.wav
+    reference_rttm: data/eval/E/reference.rttm
+    speaker_mode: FIXED
+    num_speakers: 4
+
+  - id: F_interjections
+    audio: data/eval/F/mixture.wav
+    reference_rttm: data/eval/F/reference.rttm
+    speaker_mode: FIXED
+    num_speakers: 4
+
+  - id: G_similar_voices
+    audio: data/eval/G/mixture.wav
+    reference_rttm: data/eval/G/reference.rttm
+    speaker_mode: FIXED
+    num_speakers: 5
