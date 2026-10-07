@@ -97,6 +97,7 @@ def assign_words(
             iv = _word_interval(w)
             rec = {
                 "word": str(w.get("word", "")).strip(),
+                "sep": w.get("sep"),  # original separator before this word (Azure MAI display text)
                 "start": iv[0] if iv else None,
                 "end": _num(w.get("end")) if iv else None,
                 "score": None if _num(w.get("score")) is None else round(_num(w.get("score")), 4),
@@ -143,6 +144,18 @@ def assign_words(
         if rec["speaker_cluster"] is not None:
             nxt = rec["speaker_cluster"]
     return words_out
+
+
+def _join_words(words: list[dict], joiner: str) -> str:
+    """Join words using their original separators when the ASR provides them (keeps the service's
+    spacing and punctuation), otherwise the language default (space, or nothing for CJK)."""
+    parts = []
+    for i, w in enumerate(words):
+        if i:
+            sep = w.get("sep")
+            parts.append(joiner if sep is None else (sep if sep.strip() or sep == "" else " "))
+        parts.append(w["word"])
+    return "".join(parts).strip()
 
 
 def build_utterances(
@@ -192,7 +205,7 @@ def build_utterances(
             continue
         scores = [w["score"] for w in ws if w.get("score") is not None]
         secondary = sorted({c for w in ws for c in w["secondary_clusters"]})
-        text = joiner.join(w["word"] for w in ws if w["word"]).strip()
+        text = _join_words([w for w in ws if w["word"]], joiner)
         if not text:
             continue
         out.append({

@@ -7,6 +7,8 @@ from meeting_transcriber.errors import ConfigError
 def test_defaults_load_from_yaml():
     cfg = load_config(env={})
     assert cfg.asr.language == "ko"
+    assert cfg.asr.backend == "azure_mai" and cfg.asr.azure.model == "MAI-Transcribe-2"
+    assert cfg.asr.azure.api_version == "2025-10-15" and cfg.asr.azure.force_locale is False
     assert cfg.diarization.model == "pyannote/speaker-diarization-community-1"
     assert cfg.diarization.max_speakers == 10
     assert cfg.diarization.speaker_limit == 10
@@ -88,3 +90,14 @@ def test_hf_token_not_part_of_config(monkeypatch):
     monkeypatch.setenv("HF_TOKEN", token)
     cfg = load_config(env={"HF_TOKEN": token})
     assert token not in repr(cfg.to_dict())
+
+
+def test_invalid_asr_backend_rejected():
+    with pytest.raises(ConfigError):
+        load_config(env={"MT_ASR__BACKEND": "openai"})
+
+
+def test_azure_key_never_in_config(monkeypatch):
+    monkeypatch.setenv("AZURE_SPEECH_KEY", "k" * 32)
+    cfg = load_config(env={"AZURE_SPEECH_KEY": "k" * 32})
+    assert "k" * 32 not in repr(cfg.to_dict())

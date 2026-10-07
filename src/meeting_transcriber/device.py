@@ -9,7 +9,7 @@ import sys
 from contextlib import contextmanager
 from typing import Iterator
 
-from .config import AppConfig, hf_token
+from .config import AppConfig, azure_speech_endpoint, azure_speech_key, hf_token
 from .errors import ConfigError, GpuOutOfMemoryError, is_cuda_oom
 from .logging_utils import get_logger
 
@@ -32,6 +32,39 @@ def resolve_device(requested: str) -> str:
 
 def torch_device_string(device: str, index: int) -> str:
     return f"cuda:{index}" if device == "cuda" else device
+
+
+def effective_cpu_threads(cfg: AppConfig) -> int:
+    """runtime.cpu_threads, where 0 means all logical CPUs."""
+    import os
+
+    n = int(cfg.runtime.cpu_threads or 0)
+    return n if n > 0 else max(1, os.cpu_count() or 1)
+
+
+def apply_torch_threads(cfg: AppConfig) -> int:
+    """(Re)apply the intra-op thread count. Some dependencies change it globally at import time
+    (silero-vad - imported by WeSpeaker - calls torch.set_num_threads(1)), which would make every
+    later CPU stage (pyannote, wav2vec2 alignment, embeddings) single-threaded."""
+    import torch
+
+    n = effective_cpu_threads(cfg)
+    if torch.get_num_threads() != n:
+        torch.set_num_threads(n)
+    return n
+
+
+@contextmanager
+def keep_torch_threads() -> Iterator[None]:
+    """Undo import-time torch.set_num_threads() side effects of third-party packages."""
+    import torch
+
+    before = torch.get_num_threads()
+    try:
+        yield
+    finally:
+        if torch.get_num_threads() != before:
+            torch.set_num_threads(before)
 
 
 def resolve_compute_type(compute_type: str, device: str) -> str:
@@ -137,15 +170,28 @@ def collect_diagnostics(cfg: AppConfig) -> dict:
         info["ctranslate2_cuda_devices"] = None
 
     device = info.get("device") if isinstance(info.get("device"), str) else "cpu"
-    info["whisper_model"] = cfg.asr.model
+    info["asr_backend"] = cfg.asr.backend
+    if cfg.asr.backend == "azure_mai":
+        from urllib.parse import urlparse
+
+        endpoint = azure_speech_endpoint(cfg)
+        info["asr_model"] = cfg.asr.azure.model
+        info["azure_speech_endpoint_host"] = urlparse(endpoint).netloc if endpoint and "://" in endpoint else (endpoint or "NOT SET")
+        info["azure_speech_auth"] = cfg.asr.azure.auth
+        info["azure_speech_key"] = "set" if azure_speech_key() else "NOT SET"  # never the value
+        info["azure_api_version"] = cfg.asr.azure.api_version
+        info["azure_phrase_list_size"] = len(cfg.asr.azure.phrases)
+    else:
+        info["whisper_model"] = cfg.asr.model
     info["compute_type"] = resolve_compute_type(cfg.asr.compute_type, device if device in ("cuda", "cpu") else "cpu")
     info["pyannote_model"] = cfg.diarization.model
     info["wespeaker_model"] = cfg.speaker_id.wespeaker_model
     info["alignment_model_ko"] = default_alignment_model("ko")
     if device == "cpu":
         info["cpu_note"] = (
-            "CPU 모드: large-v3 전사는 실시간의 수 배 이상 소요될 수 있습니다. "
-            "실사용은 NVIDIA GPU 를 권장하며, CPU 에서는 large-v3-turbo + int8 을 권장합니다."
+            "CPU 모드: 1시간 회의 기준 화자 분리 약 27분 + 화자 식별 최대 약 5분(4코어 실측)."
+            + (" 음성인식은 Azure MAI 에서 처리됩니다." if cfg.asr.backend == "azure_mai"
+               else " 로컬 음성인식은 turbo 약 12분 / large-v3 약 33분이 추가됩니다. 실사용은 NVIDIA GPU 권장.")
         )
     return info
 

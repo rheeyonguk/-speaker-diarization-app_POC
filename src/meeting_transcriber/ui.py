@@ -17,6 +17,7 @@ logger = get_logger(__name__)
 LANGUAGES = [("한국어 (ko)", "ko"), ("자동 감지", "auto"), ("English (en)", "en"), ("日本語 (ja)", "ja"), ("中文 (zh)", "zh")]
 WHISPER_MODELS = ["large-v3", "large-v3-turbo", "medium", "small"]
 SPEAKER_MODES = [("자동 추정 (AUTO)", "AUTO"), ("범위 지정 (RANGE)", "RANGE"), ("인원 고정 (FIXED)", "FIXED")]
+ASR_BACKENDS = [("Azure MAI-Transcribe-2 (사내 Azure)", "azure_mai"), ("WhisperX large-v3 (로컬)", "whisperx")]
 SPEAKER_HEADERS = ["클러스터", "최종 화자", "상태", "유사도(cos)", "최고 후보", "후보 유사도", "margin", "발화(초)", "근거(초)", "사유"]
 PROFILE_HEADERS = ["이름", "ID", "샘플 수", "사용 구간", "유효 음성(초)", "원본 음성 보관", "임베딩 모델", "갱신"]
 
@@ -31,6 +32,7 @@ def _fmt(v, nd=3):
 def build_app(cfg: AppConfig):
     import gradio as gr
 
+    from .asr.azure_mai import parse_phrases_text
     from .branding import footer_html, header_html, page_title, steps_html
     from .device import collect_diagnostics
     from .export.writers import render_txt
@@ -61,7 +63,12 @@ def build_app(cfg: AppConfig):
     def on_mode(mode):
         return (gr.update(visible=mode == "FIXED"), gr.update(visible=mode == "RANGE"), gr.update(visible=mode == "RANGE"))
 
+    def on_backend(backend):
+        local = backend == "whisperx"
+        return gr.update(visible=local), gr.update(visible=not local)
+
     def run_transcription(file, language, mode, num, min_s, max_s, model, identify, matching_mode, threshold,
+                          backend=None, phrases=None,
                           progress=gr.Progress()):  # noqa: B008 - Gradio injects progress via this default
         empty = ("", [], [], None)
         if not file:
@@ -79,6 +86,8 @@ def build_app(cfg: AppConfig):
             min_speakers=int(min_s) if min_s else None,
             max_speakers=int(max_s) if max_s else None,
             whisper_model=model,
+            asr_backend=backend or None,
+            phrases=parse_phrases_text(phrases),
             identify=bool(identify),
             matching_mode=matching_mode,
             match_threshold=float(threshold),
@@ -100,8 +109,10 @@ def build_app(cfg: AppConfig):
             "real_time_factor": doc["processing"]["real_time_factor"],
             "stage_timings_sec": doc["processing"]["timings_sec"],
             "device": doc["settings"]["device"],
-            "whisper_model": doc["models"]["asr"],
-            "alignment_model": doc["models"]["alignment"],
+            "asr_backend": doc["settings"].get("asr_backend"),
+            "asr_model": doc["models"]["asr"],
+            "asr_service": doc["models"]["asr_backend"],
+            "word_timestamps": doc["models"]["alignment"],
             "pyannote_model": doc["models"]["diarization"],
             "speaker_embedding_model": doc["models"]["speaker_embedding"],
             "gpu_peak_allocated_gb": doc["processing"].get("torch_peak_allocated_gb"),
@@ -183,6 +194,21 @@ def build_app(cfg: AppConfig):
         info["last_run"] = dict(last_run) if last_run else "아직 실행 기록 없음"
         return info
 
+    def azure_check():
+        import tempfile
+
+        from .asr import AzureMaiTranscriber
+
+        try:
+            with tempfile.TemporaryDirectory() as tmp:
+                res = AzureMaiTranscriber(cfg).check(Path(tmp))
+            msg = (f"✅ Azure MAI 연결 성공: {res['endpoint_host']} / {res['model']} / 응답 {res['latency_sec']}초")
+            if res["notes"]:
+                msg += "\n" + "\n".join(f"ℹ {n}" for n in res["notes"])
+            return msg
+        except Exception as exc:  # noqa: BLE001
+            return error_text(exc)
+
     # ------------------------------------------------------------------ layout
     with gr.Blocks(title=page_title(cfg), analytics_enabled=False) as demo:
         gr.HTML(header_html(cfg))
@@ -195,9 +221,16 @@ def build_app(cfg: AppConfig):
                                    file_types=[".wav", ".mp3", ".m4a", ".mp4", ".mov"], type="filepath", height=170)
                     gr.HTML('<div class="mt-section-title">인식 설정</div>')
                     with gr.Group():
-                        lang = gr.Dropdown(LANGUAGES, value=cfg.asr.language, label="언어 (Language)")
-                        model = gr.Dropdown(WHISPER_MODELS, value=cfg.asr.model, label="음성인식 모델 (Whisper Model)",
-                                            info="GPU 가 없으면 large-v3-turbo 권장", allow_custom_value=True)
+                        backend = gr.Radio(ASR_BACKENDS, value=cfg.asr.backend, label="음성인식 엔진 (ASR)",
+                                           info="Azure: 회의 음성이 사내 Azure Speech 리소스로 전송됩니다 / 로컬: 외부 전송 없음")
+                        lang = gr.Dropdown(LANGUAGES, value=cfg.asr.language, label="언어 (Language)",
+                                           info="Azure MAI 는 자동 감지가 기본입니다 (asr.azure.force_locale)")
+                        phrases = gr.Textbox(label="전문용어 우선 인식 (Azure MAI keyword biasing)", lines=2,
+                                             placeholder="쉼표/줄바꿈 구분 예: APQR, CAPA, 일탈, 변경관리, 제품명",
+                                             visible=cfg.asr.backend == "azure_mai")
+                        model = gr.Dropdown(WHISPER_MODELS, value=cfg.asr.model, label="로컬 음성인식 모델 (Whisper Model)",
+                                            info="GPU 가 없으면 large-v3-turbo 권장", allow_custom_value=True,
+                                            visible=cfg.asr.backend == "whisperx")
                     gr.HTML('<div class="mt-section-title">참석자 수</div>')
                     with gr.Group():
                         mode = gr.Radio(SPEAKER_MODES, value=cfg.diarization.mode, label="화자 수 설정 (Speaker Count Mode)",
@@ -232,8 +265,9 @@ def build_app(cfg: AppConfig):
             gr.HTML('<div class="mt-section-title">결과 파일 다운로드</div>')
             downloads = gr.File(label="TXT · JSON · CSV · SRT", file_count="multiple", interactive=False, height=120)
             mode.change(on_mode, mode, [num, min_s, max_s])
+            backend.change(on_backend, backend, [model, phrases])
             run_btn.click(run_transcription,
-                          [f_in, lang, mode, num, min_s, max_s, model, identify, matching, thr],
+                          [f_in, lang, mode, num, min_s, max_s, model, identify, matching, thr, backend, phrases],
                           [status, transcript, spk_table, sim_table, downloads])
 
         with gr.Tab("화자 등록 (Speaker Enrollment)"):
@@ -272,8 +306,13 @@ def build_app(cfg: AppConfig):
             refresh.click(lambda: (profile_rows(), gr.update(choices=profile_choices())), None, [profiles, sel])
 
         with gr.Tab("시스템 진단 (Diagnostics)") as diag_tab:
-            gr.HTML('<div class="mt-note">GPU/CUDA 인식 여부, 라이브러리·모델 버전, 최근 실행의 화자 수·처리 시간·'
-                    'RTF(처리시간 ÷ 오디오 길이)를 확인합니다. HF 토큰은 설정 여부만 표시합니다.</div>')
+            gr.HTML('<div class="mt-note">GPU/CUDA 인식 여부, 음성인식 엔진(Azure MAI 엔드포인트), 라이브러리·모델 버전, '
+                    '최근 실행의 화자 수·처리 시간·RTF(처리시간 ÷ 오디오 길이)를 확인합니다. '
+                    'HF 토큰·Azure 키는 설정 여부만 표시합니다.</div>')
+            with gr.Row():
+                az_btn = gr.Button("Azure MAI 연결 테스트 (2초 음성 전송)", variant="secondary")
+                az_out = gr.Textbox(show_label=False, lines=2, placeholder="AZURE_SPEECH_ENDPOINT / KEY 설정 확인용")
+            az_btn.click(azure_check, None, az_out)
             d_btn = gr.Button("새로고침", variant="secondary")
             d_json = gr.JSON(label="Device / CUDA / Models / 최근 실행")
             d_btn.click(diagnostics, None, d_json)

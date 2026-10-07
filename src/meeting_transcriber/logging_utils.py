@@ -1,8 +1,8 @@
 """Logging with secret redaction.
 
-The HF token must never reach a log line. ``SecretRedactingFilter`` masks the current HF_TOKEN
-value and anything that looks like a Hugging Face token (``hf_...``) in every record, including
-records emitted by third-party libraries attached to the root logger.
+Secrets must never reach a log line. ``SecretRedactingFilter`` masks the current HF_TOKEN and
+AZURE_SPEECH_KEY values and anything that looks like a Hugging Face token (``hf_...``) in every
+record, including records emitted by third-party libraries attached to the root logger.
 """
 
 from __future__ import annotations
@@ -16,9 +16,10 @@ _MASK = "hf_***REDACTED***"
 
 
 def redact(text: str) -> str:
-    token = os.environ.get("HF_TOKEN")
-    if token and len(token) >= 8:
-        text = text.replace(token, _MASK)
+    for var in ("HF_TOKEN", "HUGGING_FACE_HUB_TOKEN", "AZURE_SPEECH_KEY"):
+        secret = os.environ.get(var)
+        if secret and len(secret) >= 8:
+            text = text.replace(secret, "***REDACTED***")
     return _HF_TOKEN_PATTERN.sub(_MASK, text)
 
 

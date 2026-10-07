@@ -15,10 +15,17 @@ from datetime import datetime
 from pathlib import Path
 from typing import Callable, Optional
 
-from ..asr import ASR_OOM_HINT, WhisperXAligner, WhisperXTranscriber
+from ..asr import ASR_OOM_HINT, AzureMaiTranscriber, WhisperXAligner, WhisperXTranscriber
 from ..audio.preprocess import PreparedAudio, prepare_audio
 from ..config import AppConfig, speaker_count_kwargs, validate_config
-from ..device import gpu_memory_snapshot, oom_guard, release_gpu_memory, resolve_device, torch_device_string
+from ..device import (
+    apply_torch_threads,
+    gpu_memory_snapshot,
+    oom_guard,
+    release_gpu_memory,
+    resolve_device,
+    torch_device_string,
+)
 from ..diarization import DIARIZATION_OOM_HINT, DiarizationResult, PyannoteDiarizer
 from ..errors import ConfigError, UserFacingError
 from ..export import write_outputs
@@ -58,6 +65,8 @@ class RunRequest:
     min_speakers: Optional[int] = None
     max_speakers: Optional[int] = None
     whisper_model: Optional[str] = None
+    asr_backend: Optional[str] = None       # azure_mai | whisperx (None = config)
+    phrases: Optional[list] = None          # extra keyword-biasing terms (Azure MAI)
     identify: Optional[bool] = None
     matching_mode: Optional[str] = None
     match_threshold: Optional[float] = None
@@ -80,6 +89,8 @@ def effective_config(base: AppConfig, req: RunRequest) -> AppConfig:
         cfg.asr.language = req.language
     if req.whisper_model:
         cfg.asr.model = req.whisper_model
+    if req.asr_backend:
+        cfg.asr.backend = req.asr_backend
     if req.speaker_mode:
         cfg.diarization.mode = req.speaker_mode.upper()
         if cfg.diarization.mode == "FIXED":
@@ -147,6 +158,7 @@ class MeetingTranscriber:
     def run(self, req: RunRequest, progress: Optional[ProgressFn] = None) -> RunResult:
         cfg = effective_config(self.cfg, req)
         device = resolve_device(cfg.runtime.device)
+        apply_torch_threads(cfg)
         speaker_kwargs = speaker_count_kwargs(
             cfg.diarization.mode, cfg.diarization.num_speakers, cfg.diarization.min_speakers,
             cfg.diarization.max_speakers, cfg.diarization.speaker_limit,
@@ -195,6 +207,13 @@ class MeetingTranscriber:
 
             # 2. ASR
             def run_asr(p):
+                if cfg.asr.backend == "azure_mai":
+                    # cloud ASR: the 16 kHz working copy is uploaded to the configured Azure Speech resource
+                    mai = AzureMaiTranscriber(cfg)
+                    out = mai.transcribe(audio, sr, job_dir, progress=p, extra_phrases=req.phrases)
+                    out["asr_info"] = mai.describe()
+                    warnings.extend(mai.notes)
+                    return out
                 asr = self._get(("asr", cfg.asr.model, device, cfg.asr.compute_type, cfg.asr.language, cfg.asr.vad_method),
                                 lambda: WhisperXTranscriber(cfg, device))
                 try:
@@ -209,6 +228,9 @@ class MeetingTranscriber:
 
             # 3. alignment
             def run_align(p):
+                if transcript.get("word_timestamps_source"):
+                    # Azure MAI already returns word timestamps: forced alignment is not needed
+                    return dict(transcript, align_model=f"{transcript['word_timestamps_source']} word timestamps")
                 if not cfg.alignment.enabled:
                     return {"segments": [dict(s, words=[]) for s in transcript["segments"]], "aligned": False,
                             "language": language}
@@ -221,7 +243,7 @@ class MeetingTranscriber:
                     self._done(aligner)
 
             aligned = stage(2, run_align, "alignment.enabled=false 로 단어 정렬을 끄거나 GPU 메모리를 확보하세요.")
-            if not aligned.get("aligned"):
+            if not aligned.get("aligned") and transcript.get("segments"):
                 warnings.append(f"언어 '{language}' 단어 단위 정렬을 수행하지 못했습니다 (세그먼트 단위로 화자 할당).")
 
             # 4. diarization
@@ -232,6 +254,7 @@ class MeetingTranscriber:
                 finally:
                     self._done(diarizer)
 
+            apply_torch_threads(cfg)  # guard against import-time thread changes in earlier stages
             diar: DiarizationResult = stage(3, run_diar, DIARIZATION_OOM_HINT)
             if diar.num_speakers == 0:
                 warnings.append("화자 분리 결과 발화 구간이 없습니다.")
@@ -338,14 +361,20 @@ class MeetingTranscriber:
             "diarization": diar.to_dict(),
             "speaker_identification": ident_dict,
             "models": {
-                "asr": cfg.asr.model,
-                "asr_backend": "faster-whisper (via WhisperX)",
+                "asr": cfg.asr.azure.model if cfg.asr.backend == "azure_mai" else cfg.asr.model,
+                "asr_backend": ("Azure Speech (Microsoft Foundry) - " + (transcript.get("asr_info") or {}).get("endpoint_host", "")
+                                if cfg.asr.backend == "azure_mai" else "faster-whisper (via WhisperX)"),
                 "alignment": aligned.get("align_model"),
                 "diarization": cfg.diarization.model,
                 "speaker_embedding": ident.model_id,
             },
             "settings": {
                 "device": device,
+                "asr_backend": cfg.asr.backend,
+                "asr_requests": transcript.get("requests"),
+                "asr_languages_detected": transcript.get("languages_detected"),
+                "asr_phrase_list": transcript.get("phrase_list"),
+                "asr_locale_forced": transcript.get("locale_forced"),
                 "compute_type": cfg.asr.compute_type,
                 "language_requested": cfg.asr.language,
                 "speaker_mode": cfg.diarization.mode,

@@ -19,7 +19,13 @@ from typing import Callable, Optional
 import numpy as np
 
 from ..config import AppConfig
-from ..device import default_alignment_model, release_gpu_memory, resolve_compute_type, torch_device_string
+from ..device import (
+    default_alignment_model,
+    effective_cpu_threads,
+    release_gpu_memory,
+    resolve_compute_type,
+    torch_device_string,
+)
 from ..errors import ModelLoadError, UserFacingError, is_auth_error, is_cuda_oom, is_network_error
 from ..logging_utils import get_logger
 
@@ -84,7 +90,7 @@ class WhisperXTranscriber:
                 vad_method=self.cfg.asr.vad_method,
                 vad_options={"chunk_size": self.cfg.asr.chunk_size},
                 download_root=self.cfg.model_cache_dir,
-                threads=self.cfg.runtime.cpu_threads,
+                threads=effective_cpu_threads(self.cfg),
             )
         except UserFacingError:
             raise

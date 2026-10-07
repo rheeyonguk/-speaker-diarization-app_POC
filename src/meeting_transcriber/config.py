@@ -29,7 +29,7 @@ ENV_PREFIX = "MT_"
 class RuntimeConfig:
     device: str = "auto"
     device_index: int = 0
-    cpu_threads: int = 4
+    cpu_threads: int = 0   # 0 = all logical CPUs
     release_models_between_stages: bool = True
 
 
@@ -52,7 +52,28 @@ class AudioConfig:
 
 
 @dataclass
+class AzureMaiConfig:
+    """Azure Speech (Microsoft Foundry) MAI-Transcribe via the LLM Speech / fast transcription REST API.
+
+    Endpoint and key are read from the environment (AZURE_SPEECH_ENDPOINT / AZURE_SPEECH_KEY);
+    ``endpoint`` here is only a non-secret fallback. The key is never stored in config."""
+
+    endpoint: Optional[str] = None
+    model: str = "MAI-Transcribe-2"
+    api_version: str = "2025-10-15"
+    auth: str = "key"                 # key (Ocp-Apim-Subscription-Key) | entra (Microsoft Entra ID token)
+    force_locale: bool = False        # MS guidance: force a locale only if auto-detection fails
+    transcribe_style: str = "verbatim"  # verbatim | clean
+    phrases: list = field(default_factory=list)  # keyword biasing (phraseList.phrases)
+    upload_format: str = "flac"       # flac (smaller upload) | wav
+    max_chunk_minutes: float = 120.0  # split longer recordings (API limit: < 5 h and < 500 MB per file)
+    timeout_sec: float = 1800.0
+    max_retries: int = 3
+
+
+@dataclass
 class AsrConfig:
+    backend: str = "azure_mai"        # azure_mai | whisperx
     model: str = "large-v3"
     compute_type: str = "auto"
     batch_size: int = 16
@@ -61,6 +82,7 @@ class AsrConfig:
     chunk_size: int = 30
     beam_size: int = 5
     initial_prompt: Optional[str] = None
+    azure: AzureMaiConfig = field(default_factory=AzureMaiConfig)
 
 
 @dataclass
@@ -137,9 +159,14 @@ class BrandConfig:
     org_label: str = "AX PoC · 사내 전용"
     app_title: str = "AI 회의록"
     subtitle: str = "한국어 회의 음성 → 화자별 회의록 자동 생성 · 등록 화자 자동 식별"
+    # shown when asr.backend=whisperx (everything local)
     security_badge: str = "로컬 처리 · 외부 전송 없음"
-    badges: list = field(default_factory=lambda: ["WhisperX STT", "pyannote 화자 분리", "WeSpeaker 화자 식별"])
     footer: str = "모든 음성·화자 정보는 이 PC 안에서만 처리·저장됩니다. 자동 생성 결과는 검토 후 사용하세요."
+    # shown when asr.backend=azure_mai (audio goes to the company Azure Speech resource)
+    security_badge_cloud: str = "음성인식: 사내 Azure · 화자 정보는 이 PC에만 저장"
+    footer_cloud: str = ("회의 음성은 음성인식을 위해 사내 Azure Speech 리소스로 전송되며, 화자 음성 등록 정보는 이 PC에만 "
+                         "저장됩니다. 자동 생성 결과는 검토 후 사용하세요.")
+    badges: list = field(default_factory=lambda: ["pyannote 화자 분리", "WeSpeaker 화자 식별"])
     primary_color: str = "#e12319"   # Hanmi CI single red
     accent_color: str = "#333333"    # neutral charcoal for text / secondary accents
     logo_path: Optional[str] = "assets/brand/hanmi_emblem.svg"
@@ -216,6 +243,16 @@ def load_dotenv_if_present() -> None:
     env_file = project_root() / ".env"
     if env_file.exists():
         load_dotenv(env_file, override=False)
+
+
+def azure_speech_key() -> Optional[str]:
+    key = (os.environ.get("AZURE_SPEECH_KEY") or "").strip()
+    return key or None
+
+
+def azure_speech_endpoint(cfg: "AppConfig") -> Optional[str]:
+    value = (os.environ.get("AZURE_SPEECH_ENDPOINT") or cfg.asr.azure.endpoint or "").strip()
+    return value.rstrip("/") or None
 
 
 def hf_token() -> Optional[str]:
@@ -356,6 +393,7 @@ def _unwrap_optional(hint: Any) -> tuple[Any, bool]:
 # --------------------------------------------------------------------------- validation
 
 VALID_DEVICES = {"auto", "cuda", "cpu"}
+VALID_ASR_BACKENDS = {"azure_mai", "whisperx"}
 VALID_MODES = {"AUTO", "RANGE", "FIXED"}
 VALID_MATCHING = {"flexible", "strict_one_to_one", "argmax"}  # argmax = comparison baseline
 VALID_COMPUTE = {"auto", "default", "float16", "int8_float16", "int8", "float32", "bfloat16", "int8_bfloat16", "int8_float32"}
@@ -366,6 +404,16 @@ _HEX_RE = re.compile(r"^#[0-9a-fA-F]{6}$")
 def validate_config(cfg: AppConfig) -> None:
     if cfg.runtime.device not in VALID_DEVICES:
         raise ConfigError(f"runtime.device 는 {sorted(VALID_DEVICES)} 중 하나여야 합니다: {cfg.runtime.device}")
+    if cfg.asr.backend not in VALID_ASR_BACKENDS:
+        raise ConfigError(f"asr.backend 는 {sorted(VALID_ASR_BACKENDS)} 중 하나여야 합니다: {cfg.asr.backend}")
+    if cfg.asr.azure.auth not in ("key", "entra"):
+        raise ConfigError("asr.azure.auth 는 key | entra")
+    if cfg.asr.azure.transcribe_style not in ("verbatim", "clean"):
+        raise ConfigError("asr.azure.transcribe_style 는 verbatim | clean")
+    if cfg.asr.azure.upload_format not in ("flac", "wav"):
+        raise ConfigError("asr.azure.upload_format 는 flac | wav")
+    if not 1 <= cfg.asr.azure.max_chunk_minutes <= 290:
+        raise ConfigError("asr.azure.max_chunk_minutes 는 1~290 (API 한도: 파일당 5시간 미만)")
     if cfg.asr.compute_type not in VALID_COMPUTE:
         raise ConfigError(f"asr.compute_type 지원값 아님: {cfg.asr.compute_type}")
     if cfg.asr.batch_size < 1:

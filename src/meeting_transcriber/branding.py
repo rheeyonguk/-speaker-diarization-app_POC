@@ -163,14 +163,17 @@ def header_html(cfg: AppConfig) -> str:
     logo_html = (f'<img class="mt-logo" src="{logo}" alt="{e(b.company)}"/><div class="mt-sep"></div>'
                  if logo else "")
     org = f'<span class="mt-org">{e(b.org_label)}</span>' if b.org_label else ""
-    badges = "".join(f'<span class="mt-badge">{e(x)}</span>' for x in b.badges)
+    cloud = cfg.asr.backend == "azure_mai"
+    stt = f"{cfg.asr.azure.model} STT (Azure)" if cloud else "WhisperX STT (로컬)"
+    badges = "".join(f'<span class="mt-badge">{e(x)}</span>' for x in [stt, *b.badges])
+    security = b.security_badge_cloud if cloud else b.security_badge
     return f"""
 <div class="mt-header">
   <div class="mt-top">{logo_html}
     <div class="mt-names"><span class="mt-company">{e(b.company)}{org}</span><h1 class="mt-title">{e(b.app_title)}</h1></div>
   </div>
   <div class="mt-sub">{e(b.subtitle)}</div>
-  <div class="mt-badges"><span class="mt-badge mt-secure">🔒 {e(b.security_badge)}</span>{badges}</div>
+  <div class="mt-badges"><span class="mt-badge mt-secure">🔒 {e(security)}</span>{badges}</div>
 </div>"""
 
 def steps_html() -> str:
@@ -187,7 +190,8 @@ def steps_html() -> str:
 def footer_html(cfg: AppConfig) -> str:
     b = cfg.ui.brand
     lead = f"<b>{html.escape(b.company)}</b> {html.escape(b.org_label)}".strip()
-    return f'<div class="mt-footer">{lead} · {html.escape(b.footer)}</div>'
+    text = b.footer_cloud if cfg.asr.backend == "azure_mai" else b.footer
+    return f'<div class="mt-footer">{lead} · {html.escape(text)}</div>'
 
 def favicon_path(cfg: AppConfig) -> Optional[str]:
     p = cfg.ui.brand.favicon_path

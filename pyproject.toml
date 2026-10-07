@@ -23,6 +23,7 @@ dependencies = [
     "gradio>=6.17,<7",
     "jiwer>=4.0,<5",
     "python-dotenv>=1.0",
+    "requests>=2.31",  # Azure Speech (MAI-Transcribe) REST client
     "pyyaml>=6.0",
     "numpy>=2.1",
     "scipy>=1.11",
@@ -30,6 +31,8 @@ dependencies = [
 
 [project.optional-dependencies]
 dev = ["pytest>=8"]
+# keyless Microsoft Entra ID auth for Azure Speech (asr.azure.auth: entra)
+azure = ["azure-identity>=1.17"]
 
 [project.scripts]
 meeting-transcriber = "meeting_transcriber.cli:main"

@@ -99,6 +99,7 @@ def test_full_pipeline_offline_with_local_models(tmp_path, local_models, meeting
     cfg.runtime.device = "cpu"
     cfg.paths.output_dir = str(tmp_path / "outputs")
     cfg.paths.enrollment_dir = str(tmp_path / "speakers")
+    cfg.asr.backend = "whisperx"
     cfg.asr.model = str(local_models["whisper"])
     cfg.asr.batch_size = 4
     cfg.alignment.model_name = str(local_models["align"])

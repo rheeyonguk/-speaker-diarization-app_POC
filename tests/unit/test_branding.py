@@ -21,7 +21,12 @@ def test_default_brand_and_title():
     cfg = load_config(env={})
     assert page_title(cfg) == "한미약품 AI 회의록"
     h = header_html(cfg)
-    assert "한미약품" in h and "AI 회의록" in h and "외부 전송 없음" in h
+    assert "한미약품" in h and "AI 회의록" in h
+    # default backend is Azure MAI: the UI must not claim "no external transfer"
+    assert "외부 전송 없음" not in h and "사내 Azure" in h and "MAI-Transcribe-2 STT (Azure)" in h
+    assert "Azure Speech 리소스로 전송" in footer_html(cfg)
+    local = load_config(env={"MT_ASR__BACKEND": "whisperx"})
+    assert "외부 전송 없음" in header_html(local) and "이 PC 안에서만" in footer_html(local)
     assert "사내 전용" in footer_html(cfg)
     assert cfg.ui.brand.primary_color == "#e12319"           # Hanmi CI red
     assert cfg.ui.brand.primary_color in make_css(cfg)

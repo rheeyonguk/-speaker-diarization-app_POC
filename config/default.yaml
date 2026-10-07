@@ -6,7 +6,7 @@
 runtime:
   device: auto                 # auto | cuda | cpu
   device_index: 0
-  cpu_threads: 4
+  cpu_threads: 0               # 0 = all logical CPUs (torch + CTranslate2)
   # Unload each model (and empty the CUDA cache) when its stage finishes.
   # Keeps peak VRAM ~= the largest single model; costs model reload time on every run.
   release_models_between_stages: true
@@ -26,10 +26,26 @@ audio:
   keep_intermediate_wav: false # keep the 16 kHz mono working copy in the job folder
 
 asr:
-  model: large-v3              # large-v3 | large-v3-turbo | medium | small ... (faster-whisper names)
+  # azure_mai: Azure Speech (Microsoft Foundry) MAI-Transcribe-2 - audio is sent to your Azure resource,
+  #            word timestamps come from the service (WhisperX alignment is skipped).
+  # whisperx : fully local WhisperX / faster-whisper (settings below: model, compute_type, ...).
+  backend: azure_mai
+  azure:
+    endpoint: null             # prefer env AZURE_SPEECH_ENDPOINT (e.g. https://<resource>.cognitiveservices.azure.com)
+    model: MAI-Transcribe-2
+    api_version: "2025-10-15"
+    auth: key                  # key: env AZURE_SPEECH_KEY | entra: Microsoft Entra ID (pip install azure-identity)
+    force_locale: false        # MS guidance: only force a locale when auto-detection fails (true -> uses asr.language)
+    transcribe_style: verbatim # verbatim (keeps fillers, for records) | clean
+    phrases: []                # keyword biasing, e.g. [APQR, CAPA, GMP, 일탈, 변경관리]
+    upload_format: flac        # flac halves upload size vs wav
+    max_chunk_minutes: 120     # longer recordings are split at quiet points (API: < 5 h, < 500 MB per file)
+    timeout_sec: 1800
+    max_retries: 3             # retries on 429 / 5xx / network errors (exponential backoff, honours Retry-After)
+  model: large-v3              # whisperx only: large-v3 | large-v3-turbo | medium | small ... (faster-whisper names)
   compute_type: auto           # auto (cuda: float16, cpu: int8) | float16 | int8_float16 | int8 | float32
   batch_size: 16               # lower (8/4) on OOM
-  language: ko                 # ISO code, or "auto" for language detection
+  language: ko                 # ISO code, or "auto" for language detection (MAI: auto unless azure.force_locale)
   vad_method: pyannote         # WhisperX VAD: pyannote (bundled weights) | silero (torch.hub download)
   chunk_size: 30
   beam_size: 5
@@ -103,9 +119,11 @@ ui:
     org_label: AX PoC · 사내 전용
     app_title: AI 회의록
     subtitle: 한국어 회의 음성 → 화자별 회의록 자동 생성 · 등록 화자 자동 식별
-    security_badge: 로컬 처리 · 외부 전송 없음
-    badges: [WhisperX STT, pyannote 화자 분리, WeSpeaker 화자 식별]
+    security_badge: 로컬 처리 · 외부 전송 없음            # asr.backend=whisperx
     footer: 모든 음성·화자 정보는 이 PC 안에서만 처리·저장됩니다. 자동 생성 결과는 검토 후 사용하세요.
+    security_badge_cloud: "음성인식: 사내 Azure · 화자 정보는 이 PC에만 저장"   # asr.backend=azure_mai
+    footer_cloud: 회의 음성은 음성인식을 위해 사내 Azure Speech 리소스로 전송되며, 화자 음성 등록 정보는 이 PC에만 저장됩니다. 자동 생성 결과는 검토 후 사용하세요.
+    badges: [pyannote 화자 분리, WeSpeaker 화자 식별]   # the speech-to-text badge is added automatically
     primary_color: "#e12319"     # Hanmi CI: single red
     accent_color: "#333333"      # neutral charcoal
     logo_path: assets/brand/hanmi_emblem.svg     # red oval emblem + white italic "Hanmi" wordmark

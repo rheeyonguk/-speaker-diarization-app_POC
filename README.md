@@ -1,6 +1,8 @@
-# 한국어 회의 다화자 전사 PoC (Local)
+# 한국어 회의 다화자 전사 PoC
 
-**결론:** 한국어 회의 음성/영상을 로컬에서 `WhisperX(전사) → WhisperX Alignment(단어 타임스탬프) → pyannote Community-1(화자 분리, 겹침 보존) → WeSpeaker(등록 화자 식별) → TXT/JSON/CSV/SRT` 로 처리하는 실행 가능한 PoC입니다. 등록되지 않았거나 확신이 부족한 화자는 이름을 붙이지 않고 `UNKNOWN_01, UNKNOWN_02 …` 로 구분합니다.
+**결론:** 한국어 회의 음성/영상을 `Azure MAI-Transcribe-2(전사 + 단어 타임스탬프, 사내 Azure Foundry) → pyannote Community-1(화자 분리, 겹침 보존, 로컬) → WeSpeaker(등록 화자 식별, 로컬) → TXT/JSON/CSV/SRT` 로 처리하는 실행 가능한 PoC입니다. 음성인식 엔진은 설정 한 줄(`asr.backend: whisperx`)로 **완전 로컬 WhisperX large-v3 + 정렬** 로 되돌릴 수 있습니다. 등록되지 않았거나 확신이 부족한 화자는 이름을 붙이지 않고 `UNKNOWN_01, UNKNOWN_02 …` 로 구분합니다.
+
+> ⚠ 기본 음성인식(`azure_mai`)은 **회의 음성을 사내 Azure Speech 리소스로 전송**합니다(§13). 화자 분리·화자 음성 등록 정보는 계속 로컬에서만 처리·저장됩니다.
 
 > ⚠ 이 시스템은 **100% 정확한 화자 분리를 보장하지 않습니다.** 결과는 자동 생성물이며 검토 후 사용해야 합니다(§12 정확도 영향 요인).
 > ⚠ `speaker_match_threshold` 초기값(0.50)은 PoC 출발점일 뿐입니다. **환경별 calibration 필요** (§7.5).
@@ -33,9 +35,10 @@
 입력(WAV/MP3/M4A/MP4/MOV)
  │  Layer 1-2  ffprobe 확인 → ffmpeg 16 kHz mono PCM 작업 사본(원본 불변) → peak 정규화(gain만) → [noise reduction hook, 기본 OFF]
  ▼
-Layer 3  WhisperX ASR (faster-whisper / CTranslate2, VAD 배치 추론)   language=ko | auto
- ▼
-Layer 4  WhisperX forced alignment (wav2vec2 CTC, 한국어 모델은 WhisperX 기본표에서 런타임 조회) → 단어 타임스탬프
+Layer 3-4 [asr.backend=azure_mai, 기본]  Azure Speech (Microsoft Foundry) MAI-Transcribe-2
+ │           16 kHz FLAC 업로드(2시간 초과 시 조용한 지점에서 분할) → 전사 + 단어 타임스탬프 + 전문용어 우선 인식
+ │           → 서비스가 단어 시각을 주므로 forced alignment 생략. MAI 자체 화자 분리는 사용하지 않음(아래 pyannote 사용)
+ │         [asr.backend=whisperx]  WhisperX ASR(faster-whisper/CTranslate2) → WhisperX forced alignment(wav2vec2) — 완전 로컬
  ▼
 Layer 5  pyannote/speaker-diarization-community-1   AUTO | RANGE(min,max) | FIXED(num)
  │        DiarizeOutput.speaker_diarization          (겹침 보존 → overlap 플래그, 클러스터 통계)
@@ -68,6 +71,7 @@ Export   TXT(회의록) · JSON(전체 메타데이터) · CSV · SRT
 | **torchcodec** | `0.7.0` | WhisperX `<0.8`, pyannote `>=0.7.0` | 두 제약의 유일 교집합 |
 | **WeSpeaker** | git commit `9fecd6c` | **PyPI 미배포**(공식 설치법이 `pip install git+…`). 태그 v1.2.0 은 Python `load_model`/허브 모델 지원 이전 버전. `wespeaker.load_model()` → `Speaker.extract_embedding_from_pcm()` API 확인 | 움직이는 branch 가 아니라 **불변 commit 해시로 고정**(재현성). 정식 릴리스가 나오면 교체 |
 | **Gradio** | `6.17.3` | 최신 6.29.x 는 `huggingface-hub>=1.0` 계열을 요구 → WhisperX 3.8.6 의 `<1.0` 과 충돌하므로 해석기가 6.17.3 선택 | 다운그레이드가 아니라 상위 제약(WhisperX)에서 결정된 버전 |
+| **MAI-Transcribe-2** (Azure Speech) | REST `api-version=2025-10-15` | `POST {endpoint}/speechtotext/transcriptions:transcribe`, multipart `audio` + `definition`(`enhancedMode.model="MAI-Transcribe-2"`, `modelOptions.timestamps="word"`). 응답 `phrases[].words[]` 의 ms 단위 offset/duration. 60개 언어(한국어 포함), 파일당 500 MB·5시간 미만, `confidence` 는 항상 0. **public preview**. 지원 리전: centralindia, eastus, northeurope, southeastasia, westus, westus2 (**koreacentral 미지원**) | MicrosoftDocs/azure-ai-docs 원문 기준 구현. 별도 SDK 없이 `requests` 로 호출(의존성 추가 최소화), Entra ID 인증은 선택 패키지 `azure-identity` |
 | **nltk** | `3.10.3` (WhisperX 경유) | 3.10 부터 **프록시 경유 다운로드를 기본 거부**(SSRF 방어) → WhisperX alignment 가 첫 실행 시 `punkt_tab` 을 못 받으면 실패 | 사전 점검 + 명확한 오류 + `prefetch_models.py --allow-proxied-nltk` 제공 |
 
 - 의존성 충돌 분석 순서(WhisperX → pyannote → WeSpeaker → PyTorch → CUDA → CTranslate2 → torchaudio)에 따라 확인한 결과 **충돌 없음**: `uv pip check` = "All installed packages are compatible"(166 패키지), 일반 `pip` 해석기 dry-run 도 동일 버전으로 해석.
@@ -115,6 +119,7 @@ copy .env.example .env
 
 | # | 작업 | 이유 |
 |---|---|---|
+| 0 | **Azure Speech(Foundry) 리소스의 엔드포인트·키를 `.env` 에 입력**: `AZURE_SPEECH_ENDPOINT=https://<리소스명>.cognitiveservices.azure.com`, `AZURE_SPEECH_KEY=<키>` → `meeting-transcriber azure-check` 또는 UI 시스템 진단 탭의 **"Azure MAI 연결 테스트"** 로 확인 | 기본 음성인식이 MAI-Transcribe-2 입니다. 리소스는 MAI-Transcribe 지원 리전(centralindia, eastus, northeurope, southeastasia, westus, westus2)이어야 합니다. 키 없는 인증은 `pip install -e ".[azure]"` 후 `asr.azure.auth: entra`(역할: Cognitive Services User). 사내 프록시에서 `*.cognitiveservices.azure.com` 허용 필요 |
 | 1 | **Hugging Face 계정에서 [pyannote/speaker-diarization-community-1](https://hf.co/pyannote/speaker-diarization-community-1) 모델 페이지의 사용 약관(user conditions)에 먼저 동의** | Community-1 은 gated 모델입니다. **약관 승인 전에는 토큰이 있어도 다운로드가 거부됩니다.** |
 | 2 | [hf.co/settings/tokens](https://hf.co/settings/tokens) 에서 **read** 토큰 발급 → 프로젝트 루트 `.env` 에 `HF_TOKEN=hf_...` | 토큰은 `.env`/환경변수로만 읽습니다. 코드·설정·로그·출력물에 저장/출력하지 않습니다(`.env` 는 git-ignore). |
 | 3 | (권장) 인터넷 가능한 PC 에서 `python scripts/prefetch_models.py` 1회 실행 | Whisper·정렬·pyannote·WeSpeaker·NLTK 데이터를 미리 캐시. 이후 `HF_HUB_OFFLINE=1` 로 **완전 오프라인 실행** 가능 |
@@ -136,19 +141,20 @@ python app/main.py --port 7870 --config config/local.yaml
 ```
 | 탭 | 기능 |
 |---|---|
-| 회의록 생성 | 파일 업로드, Language(ko/auto/…), Speaker Count Mode(AUTO/RANGE/FIXED), Exact/Min/Max, Whisper Model, 등록 화자 식별 ON/OFF, (고급) 매칭 모드·threshold, 단계별 진행률(1.Audio preprocessing → 6.Export), Transcript / Speaker list / Similarity matrix / TXT·JSON·CSV·SRT 다운로드 |
+| 회의록 생성 | 파일 업로드, **음성인식 엔진(Azure MAI-Transcribe-2 / WhisperX 로컬)**, **전문용어 우선 인식 목록(MAI)**, Language(ko/auto/…), Speaker Count Mode(AUTO/RANGE/FIXED), Exact/Min/Max, Whisper Model, 등록 화자 식별 ON/OFF, (고급) 매칭 모드·threshold, 단계별 진행률(1.Audio preprocessing → 6.Export), Transcript / Speaker list / Similarity matrix / TXT·JSON·CSV·SRT 다운로드 |
 | 화자 등록 | 이름 + 음성 여러 개 등록(같은 이름 재등록 시 샘플 추가), 재등록(덮어쓰기), 원본 음성 보관 여부, 등록 목록(샘플 수·사용 구간·유효 음성), 삭제, 원본 음성만 삭제, 저장 음성으로 재계산 |
-| 시스템 진단 | Device, CUDA 사용 가능 여부, GPU 이름·메모리, torch/CUDA/cuDNN/CTranslate2 버전, Whisper·pyannote·WeSpeaker·정렬 모델, HF 토큰 설정 여부(값은 표시 안 함), 최근 실행의 검출 화자 수·처리 시간·오디오 길이·**RTF**·단계별 시간 |
+| 시스템 진단 | **Azure MAI 연결 테스트(2초 음성 전송)**, 음성인식 엔진·Azure 엔드포인트 호스트·키 설정 여부(값 미표시), Device, CUDA 사용 가능 여부, GPU 이름·메모리, torch/CUDA/cuDNN/CTranslate2 버전, Whisper·pyannote·WeSpeaker·정렬 모델, HF 토큰 설정 여부(값은 표시 안 함), 최근 실행의 검출 화자 수·처리 시간·오디오 길이·**RTF**·단계별 시간 |
 
 ### 5.2 CLI
 ```bash
+meeting-transcriber azure-check                                          # Azure MAI 연결·권한 확인
 meeting-transcriber diagnostics
 meeting-transcriber enroll --name 이용욱 s1.wav s2.wav s3.wav          # 같은 이름이면 샘플 추가
 meeting-transcriber enroll --name 이용욱 --replace new1.wav new2.wav   # 재등록(덮어쓰기)
 meeting-transcriber enroll-dir data/enroll_raw                         # data/enroll_raw/<이름>/*.wav 일괄
 meeting-transcriber speakers
-meeting-transcriber transcribe 회의.m4a --mode FIXED --num-speakers 5
-meeting-transcriber transcribe 회의.mp4 --mode RANGE --min-speakers 2 --max-speakers 10 --model large-v3-turbo
+meeting-transcriber transcribe 회의.m4a --mode FIXED --num-speakers 5 --phrases "APQR,CAPA,일탈,변경관리"
+meeting-transcriber transcribe 회의.mp4 --mode RANGE --min-speakers 2 --max-speakers 10 --backend whisperx --model large-v3-turbo
 meeting-transcriber transcribe 회의.wav --language auto --no-identify
 meeting-transcriber delete-raw-audio 이용욱     # 원본 등록 음성만 삭제(임베딩 유지)
 meeting-transcriber delete-speaker 이용욱       # 프로필 전체 삭제
@@ -266,7 +272,16 @@ WeSpeaker 공식 recipe(`wespeaker/bin/score.py`)의 방식인 **cosine similari
 | 키 | 기본값 | 설명 |
 |---|---|---|
 | `runtime.device` | `auto` | auto/cuda/cpu |
-| `asr.model` | `large-v3` | `large-v3-turbo` 등 faster-whisper 이름 |
+| `runtime.cpu_threads` | 0 | 0 = 전체 논리 코어 (torch·CTranslate2) |
+| `asr.backend` | `azure_mai` | `azure_mai`(사내 Azure MAI-Transcribe-2) / `whisperx`(완전 로컬) |
+| `asr.azure.model` / `api_version` | `MAI-Transcribe-2` / `2025-10-15` | |
+| `asr.azure.auth` | `key` | `key`(AZURE_SPEECH_KEY) / `entra`(Microsoft Entra ID) |
+| `asr.azure.phrases` | `[]` | 전문용어 우선 인식(keyword biasing). UI·CLI 입력과 합쳐 전송 |
+| `asr.azure.force_locale` | false | MS 권고: 자동 감지가 실패할 때만 `asr.language` 로 강제 |
+| `asr.azure.transcribe_style` | `verbatim` | verbatim(군말 포함, 기록용) / clean |
+| `asr.azure.max_chunk_minutes` | 120 | 이보다 긴 녹음은 조용한 지점에서 분할 전송 |
+| `asr.azure.max_retries` / `timeout_sec` | 3 / 1800 | 429·5xx·네트워크 오류 재시도(Retry-After 준수) |
+| `asr.model` | `large-v3` | (whisperx) `large-v3-turbo` 등 faster-whisper 이름 |
 | `asr.compute_type` | `auto` | cuda→float16, cpu→int8. OOM 시 `int8_float16` |
 | `asr.batch_size` | 16 | OOM 시 8/4 |
 | `asr.language` | `ko` | `auto` = 자동 감지 |
@@ -323,6 +338,8 @@ WeSpeaker 공식 recipe(`wespeaker/bin/score.py`)의 방식인 **cosine similari
 **본 구조의 개선 원리:** 일반 diarization 은 익명 클러스터만 제공하지만, 고정 참석자의 음성을 사전 등록(voice enrollment)하면 ① 클러스터에 이름을 자동 부여하고 ② 확신이 없는 경우 UNKNOWN 으로 분리하므로, 사람이 매번 SPEAKER_xx 를 수작업 매핑하던 방식보다 **화자 귀속(speaker attribution) 정확도와 일관성**을 높일 수 있습니다. 단, diarization 단계의 오류(분할/병합)는 식별 단계에서 일부만 보정됩니다(flexible 모드의 분할 화자 복구).
 
 **Known limitations**
+- (azure_mai) MAI-Transcribe-2 는 **public preview** 입니다. 한국어 회의에서의 정확도·단어 타임스탬프 정밀도는 사내 녹음으로 검증되지 않았습니다(§9 평가 스크립트로 WhisperX 와 CER 비교 권장). MAI 응답의 `confidence` 는 항상 0 이라 단어 신뢰도는 제공되지 않습니다.
+- (azure_mai) MAI 는 단어 토큰을 소문자·문장부호 제거 형태로 줄 수 있어, 표시용 문장에서 위치를 찾아 원래 대소문자·띄어쓰기·문장부호를 복원합니다. 표기가 크게 다른 경우(예: 숫자 읽기) 해당 단어는 서비스 토큰 그대로 표시됩니다.
 - threshold·매칭 모드 기본값은 사내 데이터로 검증되지 않았습니다(§7.5).
 - 기본 WeSpeaker 모델(VoxCeleb)은 영어 위주 학습 데이터 → 한국어 회의 환경에서의 성능 미검증. `vblinkf`(VoxBlink2 다국어)를 라이선스 확인 후 비교 평가 권장.
 - 겹침 구간에서는 단어당 대표 화자 1명만 텍스트를 가지며, 동시에 말한 두 번째 화자의 발화 내용은 복원하지 않습니다(secondary_speakers 표시만).
@@ -335,13 +352,16 @@ WeSpeaker 공식 recipe(`wespeaker/bin/score.py`)의 방식인 **cosine similari
 ## 13. 보안 · 개인정보(음성정보)
 | 원칙 | 적용 |
 |---|---|
-| HF 토큰 | `.env`/환경변수만 사용, `.env` git-ignore, 로그 필터가 토큰 값·`hf_...` 패턴 마스킹, 진단에는 설정 여부만 표시 |
-| 외부 전송 기본 OFF | 모든 추론 로컬. pyannote 텔레메트리(`PYANNOTE_METRICS_ENABLED=0`), HF Hub 텔레메트리, Gradio analytics 기본 비활성. Gradio `share=False`(외부 터널 금지), `127.0.0.1` 바인딩. pyannoteAI 유료 API 미사용 |
+| HF 토큰 · Azure 키 | `.env`/환경변수만 사용, `.env` git-ignore, 로그 필터가 `HF_TOKEN`·`AZURE_SPEECH_KEY` 값과 `hf_...` 패턴 마스킹, 진단에는 설정 여부만 표시, 오류 메시지에도 키 미포함(테스트로 확인) |
+| **음성인식 외부 전송 (azure_mai)** | 회의 음성(16 kHz FLAC)이 **사내 Azure Speech 리소스**로 HTTPS 전송됩니다. MAI-Transcribe 지원 리전에 **Korea Central 이 없어** 음성이 국외 리전에서 처리됩니다 → 개인정보 국외이전·사내 보안 승인 필요. preview 서비스(SLA 없음). 전송 후 로컬 업로드 임시파일은 즉시 삭제. UI 헤더 배지·하단 문구가 엔진에 따라 자동으로 바뀌어 사용자에게 표시됩니다. 완전 로컬이 필요하면 `asr.backend: whisperx` |
+| 그 외 외부 전송 OFF | 화자 분리·화자 식별·등록은 로컬. pyannote 텔레메트리(`PYANNOTE_METRICS_ENABLED=0`), HF Hub 텔레메트리, Gradio analytics 기본 비활성. Gradio `share=False`(외부 터널 금지), `127.0.0.1` 바인딩. pyannoteAI 유료 API 미사용 |
 | Local storage | 프로필·등록 음성·결과물은 로컬 디스크(`data/`, `outputs/`)에만 저장, git-ignore(`*.wav`, `*.npy` 포함) |
 | 원본 등록 음성 삭제 | UI "원본 음성만 삭제" / CLI `delete-raw-audio` / `keep_raw_audio=false` |
 | Voice profile 삭제 | UI "Delete" / CLI `delete-speaker` → 해당 폴더 전체 삭제 |
 | 로그 | 임베딩·음성 데이터 dump 금지. JSON 결과에도 임베딩 벡터 미포함(유사도 점수만) |
 | 원본 파일 | 읽기 전용 취급, 작업 사본은 처리 후 삭제(`audio.keep_intermediate_wav=false`) |
+
+화자 음성 등록 정보(임베딩)·등록 음성은 Azure 로 전송되지 않습니다(음성인식 요청에는 회의 음성과 전문용어 목록만 포함).
 
 Voice embedding 은 생체정보에 준하는 개인정보로 취급하십시오. 운영 전환 시 등록 동의서, 보관 기간, 접근권한(RBAC), 감사 로그 정책을 별도로 수립해야 합니다.
 
@@ -393,6 +413,12 @@ RUN_INTEGRATION=1 MT_TEST_AUDIO=회의.wav MT_TEST_NUM_SPEAKERS=3 MT_TEST_ENROLL
 ## 15. 트러블슈팅
 | 증상 | 조치 |
 |---|---|
+| `Azure Speech 엔드포인트가 설정되지 않았습니다` / `키가 설정되지 않았습니다` | `.env` 에 `AZURE_SPEECH_ENDPOINT`, `AZURE_SPEECH_KEY` 입력 (Azure Portal > 리소스 > 키 및 엔드포인트) |
+| `Azure Speech 인증 실패 (401)` | 키가 해당 리소스의 Key 1/2 인지, 엔드포인트와 같은 리소스인지 확인 |
+| `접근 거부 (403)` | 리소스 네트워크(방화벽·프라이빗 엔드포인트), 키 인증 비활성화 여부, Entra 사용 시 `Cognitive Services User` 역할 확인 |
+| `MAI-Transcribe 요청 거부 (400) … region/model` | 리소스 리전이 centralindia·eastus·northeurope·southeastasia·westus·westus2 중 하나인지 확인 (koreacentral 미지원) |
+| `Azure Speech 연결 실패` | 사내 프록시/방화벽에서 `*.cognitiveservices.azure.com` 허용, `HTTPS_PROXY` 설정 확인 |
+| `요청 한도 초과 (429)` | 자동 재시도 후에도 실패 시 잠시 후 재시도 (리소스당 분당 600 요청) |
 | `pyannote 모델 접근 권한이 없습니다` / 파이프라인을 내려받지 못함 | Community-1 페이지 약관 동의 여부, `.env` 의 `HF_TOKEN`(read 권한, `hf_` 로 시작) 확인 |
 | `다운로드 실패(네트워크/프록시 차단)` | 사내망 HF 접근 확인 → 가능한 PC 에서 `prefetch_models.py` 후 캐시 복사 + `HF_HUB_OFFLINE=1` |
 | `NLTK 'punkt_tab' 데이터가 없고…` | `python scripts/prefetch_models.py --skip whisper align pyannote wespeaker --allow-proxied-nltk` (프록시 신뢰 시) 또는 `nltk_data` 폴더 복사 |

@@ -5,6 +5,7 @@
   meeting-transcriber enroll-dir data/enroll_raw          (sub-folder name = speaker name)
   meeting-transcriber speakers | delete-speaker 이용욱 | delete-raw-audio 이용욱 | reenroll 이용욱
   meeting-transcriber diagnostics
+  meeting-transcriber azure-check                         (Azure MAI-Transcribe connectivity test)
   meeting-transcriber ui
 """
 
@@ -44,6 +45,7 @@ def _embedder(cfg):
 
 
 def cmd_transcribe(cfg, args) -> int:
+    from .asr.azure_mai import parse_phrases_text
     from .pipeline import MeetingTranscriber, RunRequest
 
     def progress(i, label, frac):
@@ -57,6 +59,8 @@ def cmd_transcribe(cfg, args) -> int:
         min_speakers=args.min_speakers,
         max_speakers=args.max_speakers,
         whisper_model=args.model,
+        asr_backend=args.backend,
+        phrases=parse_phrases_text(args.phrases),
         identify=False if args.no_identify else None,
         matching_mode=args.matching_mode,
         match_threshold=args.threshold,
@@ -150,6 +154,19 @@ def cmd_reenroll(cfg, args) -> int:
     return 0
 
 
+def cmd_azure_check(cfg, args) -> int:
+    import tempfile
+
+    from .asr import AzureMaiTranscriber
+
+    with tempfile.TemporaryDirectory() as tmp:
+        res = AzureMaiTranscriber(cfg).check(Path(tmp))
+    print(f"Azure MAI 연결 성공: {res['endpoint_host']} / {res['model']} / 응답 {res['latency_sec']}초")
+    for n in res["notes"]:
+        print(f"  ℹ {n}")
+    return 0
+
+
 def cmd_diagnostics(cfg, args) -> int:
     from .device import collect_diagnostics
 
@@ -177,7 +194,9 @@ def build_parser() -> argparse.ArgumentParser:
     t.add_argument("--num-speakers", type=int)
     t.add_argument("--min-speakers", type=int)
     t.add_argument("--max-speakers", type=int)
-    t.add_argument("--model", help="Whisper 모델 (large-v3, large-v3-turbo, ...)")
+    t.add_argument("--backend", choices=["azure_mai", "whisperx"], help="음성인식 엔진 (기본: 설정 asr.backend)")
+    t.add_argument("--phrases", help="Azure MAI 전문용어 우선 인식 목록 (쉼표 구분)")
+    t.add_argument("--model", help="WhisperX 사용 시 Whisper 모델 (large-v3, large-v3-turbo, ...)")
     t.add_argument("--no-identify", action="store_true", help="등록 화자 식별 끄기")
     t.add_argument("--matching-mode", choices=["flexible", "strict_one_to_one", "argmax"])
     t.add_argument("--threshold", type=float, help="speaker_match_threshold (raw cosine)")
@@ -206,6 +225,8 @@ def build_parser() -> argparse.ArgumentParser:
     r.add_argument("speaker")
     r.set_defaults(func=cmd_reenroll)
     sub.add_parser("diagnostics", help="CUDA/GPU/버전 진단").set_defaults(func=cmd_diagnostics)
+    sub.add_parser("azure-check", help="Azure MAI-Transcribe 연결 테스트 (2초 음성 전송)").set_defaults(
+        func=cmd_azure_check)
     u = sub.add_parser("ui", help="Gradio UI 실행")
     u.add_argument("--host")
     u.add_argument("--port", type=int)

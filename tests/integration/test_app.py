@@ -24,6 +24,7 @@ def app_url(tmp_path_factory):
     cfg.paths.enrollment_dir = str(tmp / "speakers")
     cfg.paths.output_dir = str(tmp / "outputs")
     cfg.runtime.device = "cpu"
+    cfg.asr.backend = "whisperx"
     cfg.asr.model = "no-such-whisper-model-xyz"  # forces a model-load failure without network access
     demo = build_app(cfg)
     demo.queue(default_concurrency_limit=1)
@@ -56,6 +57,7 @@ def test_upload_and_run_returns_readable_error(app_url, tmp_path, write_wav):
     client = Client(app_url, verbose=False)
     status, transcript, *_ = client.predict(
         handle_file(str(src)), "ko", "FIXED", 3, 2, 10, "no-such-whisper-model-xyz", True, "flexible", 0.5,
+        "whisperx", "",
         api_name="/run_transcription",
     )
     assert status.startswith("❌")
@@ -77,3 +79,24 @@ def test_diagnostics_endpoint(app_url):
     info = Client(app_url, verbose=False).predict(api_name="/diagnostics")
     assert "cuda_available" in info and info["hf_token"] in ("set", "NOT SET")
     assert info["pyannote_model"] == "pyannote/speaker-diarization-community-1"
+
+
+def test_azure_backend_missing_credentials_message(app_url, tmp_path, write_wav, monkeypatch):
+    from gradio_client import Client, handle_file
+
+    monkeypatch.delenv("AZURE_SPEECH_ENDPOINT", raising=False)
+    src = tmp_path / "meeting.wav"
+    write_wav(src, tone([150, 300], 3.0), SR)
+    status, *_ = Client(app_url, verbose=False).predict(
+        handle_file(str(src)), "ko", "FIXED", 3, 2, 10, "large-v3", True, "flexible", 0.5, "azure_mai", "APQR",
+        api_name="/run_transcription",
+    )
+    assert status.startswith("❌") and "AZURE_SPEECH_ENDPOINT" in status
+
+
+def test_azure_check_endpoint_reports_missing_config(app_url, monkeypatch):
+    from gradio_client import Client
+
+    monkeypatch.delenv("AZURE_SPEECH_ENDPOINT", raising=False)
+    msg = Client(app_url, verbose=False).predict(api_name="/azure_check")
+    assert msg.startswith("❌") and "AZURE_SPEECH_ENDPOINT" in msg

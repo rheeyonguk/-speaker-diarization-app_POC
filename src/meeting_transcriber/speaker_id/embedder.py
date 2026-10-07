@@ -42,7 +42,10 @@ def l2_normalize(x: np.ndarray, axis: int = -1) -> np.ndarray:
 
 
 def hub_model_names() -> list[str]:
-    from wespeaker.cli.hub import Hub
+    from ..device import keep_torch_threads
+
+    with keep_torch_threads():
+        from wespeaker.cli.hub import Hub
 
     return list(Hub.Assets.keys())
 
@@ -91,7 +94,10 @@ class WeSpeakerEmbedder:
                 raise ConfigError(f"WeSpeaker 모델 디렉터리에 {missing} 가 없습니다: {local}",
                                   hint="WeSpeaker 문서대로 체크포인트를 avg_model.pt / config.yaml 로 이름을 바꾸세요.")
 
-        import wespeaker
+        from ..device import keep_torch_threads
+
+        with keep_torch_threads():  # wespeaker -> silero_vad sets torch threads to 1 on import
+            import wespeaker
 
         logger.info("Loading WeSpeaker model %s on %s", self.model_ref, self.device)
         try:
@@ -152,7 +158,10 @@ def speech_only(audio: np.ndarray, sample_rate: int = 16000, min_silence_ms: int
     no download). Applied to float audio in [-1, 1] - the scale Silero expects."""
     global _silero
     import torch
-    from silero_vad import get_speech_timestamps, load_silero_vad
+    from ..device import keep_torch_threads
+
+    with keep_torch_threads():  # silero_vad calls torch.set_num_threads(1) at import time
+        from silero_vad import get_speech_timestamps, load_silero_vad
 
     if _silero is None:
         _silero = load_silero_vad()

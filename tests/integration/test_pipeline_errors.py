@@ -18,6 +18,7 @@ def test_bad_model_name_fails_gracefully_at_transcription(tmp_cfg, tmp_path, wri
     write_wav(src, tone([150, 300], 3.0), SR)
     digest = hashlib.sha256(src.read_bytes()).hexdigest()
     tmp_cfg.paths.model_cache_dir = str(tmp_path / "models")
+    tmp_cfg.asr.backend = "whisperx"
     with pytest.raises(UserFacingError) as ei:
         MeetingTranscriber(tmp_cfg).run(RunRequest(str(src), whisper_model="no-such-whisper-model-xyz"))
     assert ei.value.stage == "2. Transcription"
@@ -54,3 +55,27 @@ def test_cuda_request_without_gpu_is_clear(tmp_cfg, tmp_path, write_wav):
     tmp_cfg.runtime.device = "cuda"
     with pytest.raises(UserFacingError, match="CUDA"):
         MeetingTranscriber(tmp_cfg).run(RunRequest(str(src)))
+
+
+def test_azure_backend_without_credentials_fails_clearly(tmp_cfg, tmp_path, write_wav, monkeypatch):
+    monkeypatch.delenv("AZURE_SPEECH_ENDPOINT", raising=False)
+    monkeypatch.delenv("AZURE_SPEECH_KEY", raising=False)
+    src = tmp_path / "m.wav"
+    write_wav(src, tone([150], 3.0), SR)
+    tmp_cfg.asr.backend = "azure_mai"
+    with pytest.raises(UserFacingError, match="AZURE_SPEECH_ENDPOINT") as ei:
+        MeetingTranscriber(tmp_cfg).run(RunRequest(str(src)))
+    assert ei.value.stage == "2. Transcription"
+
+
+def test_torch_threads_survive_silero_import(tmp_cfg):
+    torch = pytest.importorskip("torch")
+    from meeting_transcriber.device import apply_torch_threads, effective_cpu_threads
+    from meeting_transcriber.speaker_id.embedder import hub_model_names, speech_only
+
+    apply_torch_threads(tmp_cfg)
+    hub_model_names()  # imports wespeaker -> silero_vad (which calls torch.set_num_threads(1) on import)
+    import numpy as np
+
+    speech_only(np.zeros(16000, dtype=np.float32))
+    assert torch.get_num_threads() == effective_cpu_threads(tmp_cfg)
