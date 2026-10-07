@@ -287,9 +287,21 @@ WeSpeaker 공식 recipe(`wespeaker/bin/score.py`)의 방식인 **cosine similari
 ---
 
 ## 11. GPU / CPU / 장시간 음성
-- **GPU 우선**, GPU 가 없으면 자동 CPU 전환(`compute_type` int8). CPU 에서 large-v3 는 실시간보다 수 배 느릴 수 있어 실사용 비권장이며, CPU 에서는 `large-v3-turbo + int8` 을 권장합니다(진단 탭에 안내 표시).
+- **GPU 우선**, GPU 가 없으면 자동 CPU 전환(`compute_type` int8). CPU 에서는 `large-v3-turbo + int8` 을 권장합니다(진단 탭에 안내 표시).
+- **CPU 처리시간 실측(4코어 x86 컨테이너, GPU 없음)** — 실제 모델과 **동일 구조·랜덤 가중치**로 연산량을 측정(연산량은 가중치 값과 무관). 1시간 회의 기준:
+
+  | 단계 | 측정값 | 1시간 회의 환산 |
+  |---|---|---|
+  | ASR large-v3-turbo (int8, beam 5) | encoder 3.96 s/30초 구간 + 디코딩 21.1 ms/토큰 | 약 12분 |
+  | ASR large-v3 (int8, beam 5) | encoder 3.77 s/30초 구간 + 디코딩 125.7 ms/토큰 | 약 33분 |
+  | 정렬 wav2vec2-large(XLSR, 317M) | 4.84 s/30초 | 약 10분 |
+  | 화자 분리 pyannote SpeakerDiarization+VBx | 30분 음성 실행 RTF 0.446 | 약 27분 |
+  | 화자 식별 WeSpeaker ResNet221 | 2.49 s/10초 구간 (화자당 최대 120초 사용) | 10명 기준 최대 약 5분 |
+  | **합계** | | **turbo 약 55분 / large-v3 약 75분** |
+
+  가정: 30초 구간당 발화 24초 × 5음절/초 × 한국어 0.82 토큰/음절(측정) ≈ 100 토큰. 화자 분리는 WhisperX 내장 실제 세그멘테이션 모델 + ResNet34 임베딩 구조 기준이며 Community-1과 세부 구성은 다를 수 있습니다. **결론: CPU 로도 동작은 하나 1시간 회의에 1시간 안팎이 걸리므로 실사용은 NVIDIA GPU 권장.**
 - **CUDA OOM**: torch / CTranslate2 OOM 을 단계별로 감지해 앱이 죽지 않고 "어느 단계에서, 무엇을 낮출지"(batch_size, compute_type, 모델 크기, pyannote batch)를 안내합니다.
-- **1–3시간 회의**: 단계별 모델 해제로 GPU 메모리 누적 방지. 3시간 16 kHz mono float32 오디오는 RAM 약 0.7 GB. 단어-화자 결합·구간 선택은 이진 탐색 기반으로, 3시간 규모(단어 약 2.8만 개, 턴 2.6천 개) 합성 데이터에서 각각 0.4초 / 0.2초에 처리됨을 확인했습니다.
+- **1–3시간 회의**: 단계별 모델 해제로 GPU 메모리 누적 방지. 3시간 16 kHz mono float32 오디오는 RAM 약 0.7 GB. 단어-화자 결합·구간 선택은 이진 탐색 기반으로, 3시간 규모(단어 약 2.8만 개, 턴 2.6천 개) 합성 데이터에서 각각 0.4초 / 0.2초에 처리됨을 확인했습니다. 실제 30분 음성(M4A)을 전체 6단계로 오프라인 처리했을 때 프로세스 최대 메모리는 약 2.0 GB(2분 음성 1.7 GB)였습니다(소형 Whisper 사용 — 실제 large-v3 int8 은 모델 메모리 약 1.6 GB 가 추가될 수 있음).
 - 진단 탭/JSON 에 단계별 처리 시간과 RTF(처리시간 ÷ 오디오 길이), GPU peak 메모리를 기록합니다.
 
 ---
@@ -341,7 +353,7 @@ Voice embedding 은 생체정보에 준하는 개인정보로 취급하십시오
 |---|---|
 | 설치(uv / pip 해석기) | 성공, `uv pip check`: 166 패키지 호환, 충돌 없음 |
 | import / syntax | 전 모듈 import 성공, `compileall` 통과, ruff(E,F,W,B) 통과 |
-| `pytest` | **109 passed, 1 skipped**(실모델 E2E opt-in) |
+| `pytest` | **110 passed, 1 skipped**(실제 공식 모델 E2E 1건은 opt-in) |
 | upstream API 회귀 가드 | whisperx 3.8.6 / pyannote.audio 4.0.7 / WeSpeaker / faster-whisper 실제 설치본 시그니처 일치 |
 | pyannote 반환 객체 | 실제 `DiarizeOutput` 클래스로 변환·두 diarization 보존·overlap 계산 검증 |
 | WhisperX alignment | 실제 `whisperx.load_align_model` + `whisperx.align` 코드 경로를 **로컬 소형 랜덤 Wav2Vec2-CTC(한국어 문자 사전)** 로 실행 → 단어 타임스탬프 생성 → 화자 결합 → 4개 형식 export |
@@ -351,15 +363,24 @@ Voice embedding 은 생체정보에 준하는 개인정보로 취급하십시오
 | UI | Gradio 실제 기동 + `gradio_client` 로 업로드/실행/등록/진단 API 호출, 3개 탭 구성 확인 |
 | 오류 처리 | 모델 다운로드 실패(프록시 403 → 네트워크로 정확 분류), CUDA 미존재, 잘못된 화자 수 설정, 손상 입력 → 단계명 포함 사용자 메시지(트레이스백 노출 없음) |
 | 장시간 | 3시간 규모 합성 타임라인에서 결합·구간선택 성능 확인 |
+| **전체 파이프라인 완주(오프라인)** | `MeetingTranscriber.run()` 6단계 전체를 **인터넷 없이** 실행: M4A → ffmpeg → WhisperX ASR(내장 pyannote VAD + 로컬 CTranslate2 Whisper) → WhisperX 정렬(로컬 wav2vec2) → **pyannote `SpeakerDiarization` + VBx (로컬 config.yaml)** → WeSpeaker 식별 → 4개 형식. 모델은 실제 구조·형식에 랜덤 가중치(세그멘테이션만 WhisperX 내장 실제 가중치), 음성은 pyannote 내장 실음성 재구성. 2분·30분 음성 모두 완주, FIXED 2명 반영, 두 diarization 보존, 2×2 유사도 행렬, strict JSON, 중간 파일 삭제 확인. 회귀 테스트 `tests/integration/test_e2e_local_models.py` |
+| 로컬 경로 모델 지정 | `asr.model`·`alignment.model_name`·`diarization.model`(config.yaml)·`speaker_id.wespeaker_model` 에 로컬 폴더를 지정한 오프라인 운영 방식 동작 확인 |
+| Whisper 토크나이저 호환 | openai-whisper 어휘로 재구성한 tokenizer 의 토큰 ID 가 openai-whisper(tiktoken)와 완전히 일치함을 확인(한국어 문장 포함) |
+| Windows 의존성 | `uv pip compile --python-platform x86_64-pc-windows-msvc` 로 Windows용 해석 성공(151 패키지). 148개는 Windows wheel 존재, 나머지 3개(openai-whisper, s3prl, antlr4)는 순수 Python → **C 컴파일러 불필요** |
+| CPU 처리시간 | §11 표 (실제 구조·랜덤 가중치 기준 연산량 실측) |
 
-### 14.2 미검증 항목 (모델 다운로드 · HF 인증 · GPU · 실제 한국어 음성이 없어 실행 불가)
-- 실제 Whisper `large-v3`/`large-v3-turbo` 한국어 전사 품질(CER)
-- 실제 `kresnik/wav2vec2-large-xlsr-korean` 정렬 정확도
-- 실제 pyannote Community-1 다운로드(HF 토큰·약관 승인)와 diarization 실행, AUTO/RANGE/FIXED 결과
-- 실제 WeSpeaker 사전학습 모델(`english`/`vblinkf`) 다운로드와 한국어 화자 식별 정확도, threshold 적정성
-- CUDA 실행, VRAM 사용량, OOM 실제 발생 시 동작, RTF 수치
-- Windows 설치 절차(문서 기준 작성, 실제 Windows 미검증)
-- 1–3시간 실제 녹음의 메모리/시간
+### 14.2 미검증 항목 (공식 모델 가중치 · HF 인증 · GPU · 실제 한국어 음성이 없어 실행 불가)
+이 환경에서는 Hugging Face·ModelScope·OpenAI·PyTorch 모델 배포처가 모두 차단되어 있어, **결과의 정확도**에 해당하는 항목은 검증할 수 없습니다. 실행 경로·형식·성능 구조는 §14.1 의 오프라인 완주로 대체 검증했습니다.
+
+| 항목 | 상태 |
+|---|---|
+| 실제 Whisper large-v3/turbo 한국어 전사 정확도(CER) | 미검증 — 가중치 다운로드 불가. 실행 경로·토크나이저·CPU 연산량은 검증 |
+| 실제 `kresnik/wav2vec2-large-xlsr-korean` 정렬 정확도 | 미검증 — 실행 경로·CPU 연산량은 검증 |
+| 실제 Community-1 다운로드(토큰·약관)와 분리 정확도(DER), AUTO/RANGE 화자 수 추정 | 미검증 — 같은 `SpeakerDiarization`+VBx 클래스로 실행 경로·FIXED 모드 검증 |
+| WeSpeaker 사전학습 모델의 한국어 식별 정확도·threshold 적정성 | 미검증 — 등록/식별 전 과정은 검증 |
+| CUDA 실행, VRAM, 실제 OOM 동작, GPU RTF | 미검증 — GPU 없음 (CPU 수치만 실측) |
+| Windows 실제 설치·실행 | 부분 검증 — 의존성 해석·wheel 존재 확인, 실제 Windows 실행은 미검증 |
+| 1–3시간 **실제** 녹음 | 부분 검증 — 30분 오프라인 완주·메모리 측정, 실제 녹음·실제 모델 미검증 |
 
 검증 명령(모델·토큰·GPU 준비 후):
 ```bash
