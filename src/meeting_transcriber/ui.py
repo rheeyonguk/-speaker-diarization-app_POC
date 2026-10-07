@@ -8,7 +8,7 @@ import traceback
 from pathlib import Path
 from typing import Optional
 
-from .config import AppConfig
+from .config import AppConfig, azure_speech_endpoint, azure_speech_key
 from .errors import UserFacingError
 from .logging_utils import get_logger, redact
 
@@ -209,6 +209,31 @@ def build_app(cfg: AppConfig):
         except Exception as exc:  # noqa: BLE001
             return error_text(exc)
 
+    def azure_save(endpoint_text, key_text):
+        """Store endpoint (URL, portal resource URL or resource name) + key in the local .env, then test."""
+        from .asr.azure_mai import normalize_endpoint
+        from .config import save_env_values
+
+        keep = (gr.update(), gr.update())
+        try:
+            raw = (endpoint_text or "").strip() or azure_speech_endpoint(cfg) or ""
+            if not raw:
+                return ("엔드포인트 또는 Azure 포털 리소스 URL을 입력하세요.", *keep)
+            base, notes = normalize_endpoint(raw)
+            values = {"AZURE_SPEECH_ENDPOINT": base}
+            key = (key_text or "").strip()
+            if key:
+                values["AZURE_SPEECH_KEY"] = key
+            elif cfg.asr.azure.auth == "key" and not azure_speech_key():
+                return ("키(KEY 1 또는 KEY 2)를 입력하세요. 포털 > 리소스 > 키 및 엔드포인트", *keep)
+            path = save_env_values(values)
+        except Exception as exc:  # noqa: BLE001
+            return (error_text(exc), *keep)
+        msg = "\n".join([f"💾 저장 완료: {base} → {path.name} (이 PC에만 저장, Git 제외)",
+                          *(f"ℹ {n}" for n in notes), azure_check()])
+        # clear the key box so the secret does not stay in the page
+        return msg, gr.update(value=base), gr.update(value="", placeholder="설정됨 — 변경할 때만 입력")
+
     # ------------------------------------------------------------------ layout
     with gr.Blocks(title=page_title(cfg), analytics_enabled=False) as demo:
         gr.HTML(header_html(cfg))
@@ -309,9 +334,20 @@ def build_app(cfg: AppConfig):
             gr.HTML('<div class="mt-note">GPU/CUDA 인식 여부, 음성인식 엔진(Azure MAI 엔드포인트), 라이브러리·모델 버전, '
                     '최근 실행의 화자 수·처리 시간·RTF(처리시간 ÷ 오디오 길이)를 확인합니다. '
                     'HF 토큰·Azure 키는 설정 여부만 표시합니다.</div>')
+            gr.HTML('<div class="mt-section-title">Azure MAI 연결 설정</div>')
             with gr.Row():
-                az_btn = gr.Button("Azure MAI 연결 테스트 (2초 음성 전송)", variant="secondary")
-                az_out = gr.Textbox(show_label=False, lines=2, placeholder="AZURE_SPEECH_ENDPOINT / KEY 설정 확인용")
+                az_ep = gr.Textbox(
+                    label="엔드포인트 또는 Azure 포털 리소스 URL", value=azure_speech_endpoint(cfg) or "", scale=3,
+                    placeholder="https://<리소스명>.cognitiveservices.azure.com 또는 포털 주소창 URL 그대로")
+                az_key = gr.Textbox(
+                    label="키 (KEY 1)", type="password", scale=2,
+                    placeholder="설정됨 — 변경할 때만 입력" if azure_speech_key() else "포털 > 리소스 > 키 및 엔드포인트")
+            with gr.Row():
+                az_save = gr.Button("저장 후 연결 테스트", variant="primary")
+                az_btn = gr.Button("연결 테스트만 (2초 음성 전송)", variant="secondary")
+            az_out = gr.Textbox(show_label=False, lines=3,
+                                placeholder="키는 이 PC의 .env 에만 저장되고 화면·로그에 표시되지 않습니다.")
+            az_save.click(azure_save, [az_ep, az_key], [az_out, az_ep, az_key])
             az_btn.click(azure_check, None, az_out)
             d_btn = gr.Button("새로고침", variant="secondary")
             d_json = gr.JSON(label="Device / CUDA / Models / 최근 실행")

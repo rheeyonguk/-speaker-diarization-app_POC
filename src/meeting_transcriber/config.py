@@ -245,6 +245,37 @@ def load_dotenv_if_present() -> None:
         load_dotenv(env_file, override=False)
 
 
+_ENV_VALUE = re.compile(r"^[A-Za-z0-9._:/@+=-]+$")
+
+
+def save_env_values(values: dict[str, str], env_file: Optional[Path] = None) -> Path:
+    """Write KEY=value pairs into the project .env (git-ignored) and the current process.
+
+    Existing lines for the same keys are replaced, everything else is kept. Values are restricted
+    to URL/key characters so the file never needs quoting."""
+    env_file = Path(env_file) if env_file else project_root() / ".env"
+    for k, v in values.items():
+        if not _ENV_VALUE.match(v):
+            raise ConfigError(f"{k} 값에 허용되지 않는 문자(공백·따옴표 등)가 있습니다.")
+    lines = env_file.read_text(encoding="utf-8").splitlines() if env_file.exists() else []
+    pending = dict(values)
+    out = []
+    for line in lines:
+        name = line.split("=", 1)[0].strip().removeprefix("export ").strip() if "=" in line else None
+        if name in pending:
+            out.append(f"{name}={pending.pop(name)}")
+        elif name not in values:
+            out.append(line)
+    out.extend(f"{k}={v}" for k, v in pending.items())
+    env_file.write_text("\n".join(out) + "\n", encoding="utf-8")
+    try:
+        env_file.chmod(0o600)
+    except OSError:  # pragma: no cover - e.g. some Windows filesystems
+        pass
+    os.environ.update(values)
+    return env_file
+
+
 def azure_speech_key() -> Optional[str]:
     key = (os.environ.get("AZURE_SPEECH_KEY") or "").strip()
     return key or None

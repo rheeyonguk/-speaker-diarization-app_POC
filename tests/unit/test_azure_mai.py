@@ -109,6 +109,20 @@ def test_normalize_endpoint(raw, expected):
     assert transcribe_url(base, "2025-10-15").endswith("/speechtotext/transcriptions:transcribe?api-version=2025-10-15")
 
 
+@pytest.mark.parametrize("raw", [
+    # what people copy from the browser address bar on the resource overview page
+    "https://portal.azure.com/#@contoso.com/resource/subscriptions/00000000-0000-0000-0000-000000000000/"
+    "resourceGroups/rg-poc/providers/Microsoft.CognitiveServices/accounts/Meeting-MAI-01/overview",
+    "/subscriptions/00000000-0000-0000-0000-000000000000/resourceGroups/rg-poc/providers/"
+    "Microsoft.CognitiveServices/accounts/meeting-mai-01",
+    "meeting-mai-01",
+])
+def test_portal_url_resource_id_or_name_map_to_speech_endpoint(raw):
+    base, notes = normalize_endpoint(raw)
+    assert base == "https://meeting-mai-01.cognitiveservices.azure.com"
+    assert notes and "meeting-mai-01" in notes[0]
+
+
 def test_plan_chunks_cuts_at_quiet_points_and_respects_limit():
     sr = 1000
     rng = np.random.default_rng(0)

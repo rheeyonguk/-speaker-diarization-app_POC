@@ -189,7 +189,7 @@ def collect_diagnostics(cfg: AppConfig) -> dict:
     info["alignment_model_ko"] = default_alignment_model("ko")
     if device == "cpu":
         info["cpu_note"] = (
-            "CPU 모드: 1시간 회의 기준 화자 분리 약 27분 + 화자 식별 최대 약 5분(4코어 실측)."
+            "CPU 모드: 1시간 회의 기준 화자 분리 약 27–29분 + 화자 식별 최대 약 5분(4코어 실측)."
             + (" 음성인식은 Azure MAI 에서 처리됩니다." if cfg.asr.backend == "azure_mai"
                else " 로컬 음성인식은 turbo 약 12분 / large-v3 약 33분이 추가됩니다. 실사용은 NVIDIA GPU 권장.")
         )

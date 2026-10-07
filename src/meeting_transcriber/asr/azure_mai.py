@@ -53,10 +53,25 @@ class AzureSpeechError(UserFacingError):
 # --------------------------------------------------------------------------- request building
 
 
+_PORTAL_ACCOUNT = re.compile(r"/providers/Microsoft\.CognitiveServices/accounts/([A-Za-z0-9][A-Za-z0-9-]{0,62})",
+                             re.IGNORECASE)
+_RESOURCE_NAME = re.compile(r"^[A-Za-z0-9][A-Za-z0-9-]{1,62}$")
+
+
 def normalize_endpoint(raw: str) -> tuple[str, list[str]]:
-    """Accept what people copy from the portal and return the Speech REST base URL (+ notes)."""
+    """Accept what people copy from the portal and return the Speech REST base URL (+ notes).
+
+    Besides endpoint URLs this takes the Azure portal URL / resource ID of the account or its bare
+    name; those map to ``https://<name>.cognitiveservices.azure.com`` (the custom subdomain the portal
+    assigns by default)."""
     notes: list[str] = []
     value = raw.strip()
+    account = _PORTAL_ACCOUNT.search(value)
+    if account or (_RESOURCE_NAME.match(value) and value.lower() != "localhost"):
+        name = (account.group(1) if account else value).lower()
+        notes.append(f"리소스 이름 '{name}' 으로 엔드포인트를 구성했습니다. 연결이 안 되면 포털 '키 및 엔드포인트'의 "
+                     "엔드포인트 값을 그대로 입력하세요 (사용자 지정 도메인이 다른 경우).")
+        return f"https://{name}.cognitiveservices.azure.com", notes
     if not re.match(r"^https?://", value):
         value = "https://" + value
     p = urlparse(value)
@@ -354,9 +369,9 @@ class AzureMaiTranscriber:
         if not raw:
             raise ConfigError(
                 "Azure Speech 엔드포인트가 설정되지 않았습니다 (AZURE_SPEECH_ENDPOINT).",
-                hint="Azure Portal > Foundry(Speech) 리소스 > 키 및 엔드포인트의 엔드포인트를 .env 에 "
-                     "AZURE_SPEECH_ENDPOINT=https://<리소스명>.cognitiveservices.azure.com 형식으로 입력하세요. "
-                     "로컬 음성인식을 쓰려면 asr.backend=whisperx.",
+                hint="UI '시스템 진단' 탭 > Azure MAI 연결 설정에 포털 리소스 URL(또는 엔드포인트)과 키를 넣고 저장하거나, "
+                     ".env 에 AZURE_SPEECH_ENDPOINT=https://<리소스명>.cognitiveservices.azure.com 을 입력하세요 "
+                     "(CLI: meeting-transcriber azure-setup). 로컬 음성인식을 쓰려면 asr.backend=whisperx.",
             )
         self.base, notes = normalize_endpoint(raw)
         self.notes.extend(notes)
@@ -365,8 +380,8 @@ class AzureMaiTranscriber:
         key = azure_speech_key()
         if az.auth == "key" and not key:
             raise ConfigError("Azure Speech 키가 설정되지 않았습니다 (AZURE_SPEECH_KEY).",
-                              hint=".env 에 AZURE_SPEECH_KEY=<리소스 키> 를 입력하세요 "
-                                   "(키 없는 인증은 asr.azure.auth=entra).")
+                              hint="UI '시스템 진단' 탭 > Azure MAI 연결 설정에 키를 넣고 저장하거나 .env 에 "
+                                   "AZURE_SPEECH_KEY=<리소스 키> 를 입력하세요 (키 없는 인증은 asr.azure.auth=entra).")
         self.auth = _Auth(az.auth, key)
         self.url = transcribe_url(self.base, az.api_version)
 

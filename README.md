@@ -119,7 +119,7 @@ copy .env.example .env
 
 | # | 작업 | 이유 |
 |---|---|---|
-| 0 | **Azure Speech(Foundry) 리소스의 엔드포인트·키를 `.env` 에 입력**: `AZURE_SPEECH_ENDPOINT=https://<리소스명>.cognitiveservices.azure.com`, `AZURE_SPEECH_KEY=<키>` → `meeting-transcriber azure-check` 또는 UI 시스템 진단 탭의 **"Azure MAI 연결 테스트"** 로 확인 | 기본 음성인식이 MAI-Transcribe-2 입니다. 리소스는 MAI-Transcribe 지원 리전(centralindia, eastus, northeurope, southeastasia, westus, westus2)이어야 합니다. 키 없는 인증은 `pip install -e ".[azure]"` 후 `asr.azure.auth: entra`(역할: Cognitive Services User). 사내 프록시에서 `*.cognitiveservices.azure.com` 허용 필요 |
+| 0 | **Azure 연결 등록(1회)**: UI **시스템 진단 탭 > Azure MAI 연결 설정**에 Azure 포털 리소스 페이지 URL(주소창 그대로) 또는 엔드포인트와 **키(KEY 1)** 를 붙여넣고 **"저장 후 연결 테스트"** → 이 PC 의 `.env`(Git 제외)에 저장되고 2초 음성으로 즉시 확인. CLI: `meeting-transcriber azure-setup "<포털 URL 또는 엔드포인트>"` (키는 화면에 표시되지 않게 입력) | 기본 음성인식이 MAI-Transcribe-2 입니다. 리소스는 MAI-Transcribe 지원 리전(centralindia, eastus, northeurope, southeastasia, westus, westus2)이어야 합니다. 키 없는 인증은 `pip install -e ".[azure]"` 후 `asr.azure.auth: entra`(역할: Cognitive Services User). 사내 프록시에서 `*.cognitiveservices.azure.com` 허용 필요 |
 | 1 | **Hugging Face 계정에서 [pyannote/speaker-diarization-community-1](https://hf.co/pyannote/speaker-diarization-community-1) 모델 페이지의 사용 약관(user conditions)에 먼저 동의** | Community-1 은 gated 모델입니다. **약관 승인 전에는 토큰이 있어도 다운로드가 거부됩니다.** |
 | 2 | [hf.co/settings/tokens](https://hf.co/settings/tokens) 에서 **read** 토큰 발급 → 프로젝트 루트 `.env` 에 `HF_TOKEN=hf_...` | 토큰은 `.env`/환경변수로만 읽습니다. 코드·설정·로그·출력물에 저장/출력하지 않습니다(`.env` 는 git-ignore). |
 | 3 | (권장) 인터넷 가능한 PC 에서 `python scripts/prefetch_models.py` 1회 실행 | Whisper·정렬·pyannote·WeSpeaker·NLTK 데이터를 미리 캐시. 이후 `HF_HUB_OFFLINE=1` 로 **완전 오프라인 실행** 가능 |
@@ -143,10 +143,11 @@ python app/main.py --port 7870 --config config/local.yaml
 |---|---|
 | 회의록 생성 | 파일 업로드, **음성인식 엔진(Azure MAI-Transcribe-2 / WhisperX 로컬)**, **전문용어 우선 인식 목록(MAI)**, Language(ko/auto/…), Speaker Count Mode(AUTO/RANGE/FIXED), Exact/Min/Max, Whisper Model, 등록 화자 식별 ON/OFF, (고급) 매칭 모드·threshold, 단계별 진행률(1.Audio preprocessing → 6.Export), Transcript / Speaker list / Similarity matrix / TXT·JSON·CSV·SRT 다운로드 |
 | 화자 등록 | 이름 + 음성 여러 개 등록(같은 이름 재등록 시 샘플 추가), 재등록(덮어쓰기), 원본 음성 보관 여부, 등록 목록(샘플 수·사용 구간·유효 음성), 삭제, 원본 음성만 삭제, 저장 음성으로 재계산 |
-| 시스템 진단 | **Azure MAI 연결 테스트(2초 음성 전송)**, 음성인식 엔진·Azure 엔드포인트 호스트·키 설정 여부(값 미표시), Device, CUDA 사용 가능 여부, GPU 이름·메모리, torch/CUDA/cuDNN/CTranslate2 버전, Whisper·pyannote·WeSpeaker·정렬 모델, HF 토큰 설정 여부(값은 표시 안 함), 최근 실행의 검출 화자 수·처리 시간·오디오 길이·**RTF**·단계별 시간 |
+| 시스템 진단 | **Azure MAI 연결 설정**(포털 리소스 URL·엔드포인트 + 키 → 로컬 `.env` 저장, 키는 화면·로그 미표시), **연결 테스트(2초 음성 전송)**, 음성인식 엔진·Azure 엔드포인트 호스트·키 설정 여부(값 미표시), Device, CUDA 사용 가능 여부, GPU 이름·메모리, torch/CUDA/cuDNN/CTranslate2 버전, Whisper·pyannote·WeSpeaker·정렬 모델, HF 토큰 설정 여부(값은 표시 안 함), 최근 실행의 검출 화자 수·처리 시간·오디오 길이·**RTF**·단계별 시간 |
 
 ### 5.2 CLI
 ```bash
+meeting-transcriber azure-setup "https://portal.azure.com/#@.../accounts/<리소스명>/overview"  # 엔드포인트+키 저장 후 테스트
 meeting-transcriber azure-check                                          # Azure MAI 연결·권한 확인
 meeting-transcriber diagnostics
 meeting-transcriber enroll --name 이용욱 s1.wav s2.wav s3.wav          # 같은 이름이면 샘플 추가
@@ -310,11 +311,13 @@ WeSpeaker 공식 recipe(`wespeaker/bin/score.py`)의 방식인 **cosine similari
   | ASR large-v3-turbo (int8, beam 5) | encoder 3.96 s/30초 구간 + 디코딩 21.1 ms/토큰 | 약 12분 |
   | ASR large-v3 (int8, beam 5) | encoder 3.77 s/30초 구간 + 디코딩 125.7 ms/토큰 | 약 33분 |
   | 정렬 wav2vec2-large(XLSR, 317M) | 4.84 s/30초 | 약 10분 |
-  | 화자 분리 pyannote SpeakerDiarization+VBx | 30분 음성 실행 RTF 0.446 | 약 27분 |
+  | 화자 분리 pyannote SpeakerDiarization+VBx | 30분 음성 실행 RTF 0.446 / 0.479 (2회) | 약 27–29분 |
   | 화자 식별 WeSpeaker ResNet221 | 2.49 s/10초 구간 (화자당 최대 120초 사용) | 10명 기준 최대 약 5분 |
-  | **합계** | | **turbo 약 55분 / large-v3 약 75분** |
+  | **합계 (WhisperX 로컬)** | | **turbo 약 55–57분 / large-v3 약 75–77분** |
+  | **합계 (기본: Azure MAI)** | ASR·정렬은 Azure 에서 처리 | **로컬 약 32–34분 + Azure 응답 시간(미측정)** |
 
   가정: 30초 구간당 발화 24초 × 5음절/초 × 한국어 0.82 토큰/음절(측정) ≈ 100 토큰. 화자 분리는 WhisperX 내장 실제 세그멘테이션 모델 + ResNet34 임베딩 구조 기준이며 Community-1과 세부 구성은 다를 수 있습니다. **결론: CPU 로도 동작은 하나 1시간 회의에 1시간 안팎이 걸리므로 실사용은 NVIDIA GPU 권장.**
+- **CPU 스레드**: `silero_vad`(WeSpeaker 의존성)가 import 시 `torch.set_num_threads(1)` 을 호출해, 화자 등록 직후 실행하면 화자 분리가 단일 스레드로 떨어지던 문제를 수정했습니다(5분 음성 화자 분리 360초 → 108초, 4코어). `runtime.cpu_threads: 0` = 전체 코어.
 - **CUDA OOM**: torch / CTranslate2 OOM 을 단계별로 감지해 앱이 죽지 않고 "어느 단계에서, 무엇을 낮출지"(batch_size, compute_type, 모델 크기, pyannote batch)를 안내합니다.
 - **1–3시간 회의**: 단계별 모델 해제로 GPU 메모리 누적 방지. 3시간 16 kHz mono float32 오디오는 RAM 약 0.7 GB. 단어-화자 결합·구간 선택은 이진 탐색 기반으로, 3시간 규모(단어 약 2.8만 개, 턴 2.6천 개) 합성 데이터에서 각각 0.4초 / 0.2초에 처리됨을 확인했습니다. 실제 30분 음성(M4A)을 전체 6단계로 오프라인 처리했을 때 프로세스 최대 메모리는 약 2.0 GB(2분 음성 1.7 GB)였습니다(소형 Whisper 사용 — 실제 large-v3 int8 은 모델 메모리 약 1.6 GB 가 추가될 수 있음).
 - 진단 탭/JSON 에 단계별 처리 시간과 RTF(처리시간 ÷ 오디오 길이), GPU peak 메모리를 기록합니다.
@@ -413,7 +416,7 @@ RUN_INTEGRATION=1 MT_TEST_AUDIO=회의.wav MT_TEST_NUM_SPEAKERS=3 MT_TEST_ENROLL
 ## 15. 트러블슈팅
 | 증상 | 조치 |
 |---|---|
-| `Azure Speech 엔드포인트가 설정되지 않았습니다` / `키가 설정되지 않았습니다` | `.env` 에 `AZURE_SPEECH_ENDPOINT`, `AZURE_SPEECH_KEY` 입력 (Azure Portal > 리소스 > 키 및 엔드포인트) |
+| `Azure Speech 엔드포인트가 설정되지 않았습니다` / `키가 설정되지 않았습니다` | 시스템 진단 탭 > Azure MAI 연결 설정에 포털 리소스 URL + 키 저장 (또는 `.env` 에 `AZURE_SPEECH_ENDPOINT`, `AZURE_SPEECH_KEY`). 포털 URL/리소스 이름은 `https://<리소스명>.cognitiveservices.azure.com` 으로 변환되며, 사용자 지정 도메인이 다르면 '키 및 엔드포인트'의 엔드포인트 값을 그대로 입력 |
 | `Azure Speech 인증 실패 (401)` | 키가 해당 리소스의 Key 1/2 인지, 엔드포인트와 같은 리소스인지 확인 |
 | `접근 거부 (403)` | 리소스 네트워크(방화벽·프라이빗 엔드포인트), 키 인증 비활성화 여부, Entra 사용 시 `Cognitive Services User` 역할 확인 |
 | `MAI-Transcribe 요청 거부 (400) … region/model` | 리소스 리전이 centralindia·eastus·northeurope·southeastasia·westus·westus2 중 하나인지 확인 (koreacentral 미지원) |

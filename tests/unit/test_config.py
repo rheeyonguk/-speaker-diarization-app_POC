@@ -101,3 +101,29 @@ def test_azure_key_never_in_config(monkeypatch):
     monkeypatch.setenv("AZURE_SPEECH_KEY", "k" * 32)
     cfg = load_config(env={"AZURE_SPEECH_KEY": "k" * 32})
     assert "k" * 32 not in repr(cfg.to_dict())
+
+
+def test_save_env_values_updates_in_place(tmp_path, monkeypatch):
+    import os
+
+    from meeting_transcriber.config import save_env_values
+    from meeting_transcriber.errors import ConfigError
+
+    monkeypatch.delenv("AZURE_SPEECH_ENDPOINT", raising=False)
+    monkeypatch.delenv("AZURE_SPEECH_KEY", raising=False)
+    env = tmp_path / ".env"
+    env.write_text("# comment\nHF_TOKEN=\nAZURE_SPEECH_ENDPOINT=\nexport AZURE_SPEECH_KEY=old\nAZURE_SPEECH_KEY=dup\n",
+                   encoding="utf-8")
+    save_env_values({"AZURE_SPEECH_ENDPOINT": "https://r1.cognitiveservices.azure.com",
+                     "AZURE_SPEECH_KEY": "abc123DEF456"}, env)
+    assert env.read_text(encoding="utf-8").splitlines() == [
+        "# comment", "HF_TOKEN=", "AZURE_SPEECH_ENDPOINT=https://r1.cognitiveservices.azure.com",
+        "AZURE_SPEECH_KEY=abc123DEF456"]
+    assert os.environ["AZURE_SPEECH_KEY"] == "abc123DEF456"
+    if os.name == "posix":
+        assert env.stat().st_mode & 0o077 == 0  # owner-only
+    with pytest.raises(ConfigError):
+        save_env_values({"AZURE_SPEECH_KEY": "has space"}, env)
+    new = tmp_path / "sub.env"
+    save_env_values({"AZURE_SPEECH_KEY": "k1"}, new)
+    assert new.read_text(encoding="utf-8") == "AZURE_SPEECH_KEY=k1\n"

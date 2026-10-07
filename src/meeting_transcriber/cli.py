@@ -5,6 +5,7 @@
   meeting-transcriber enroll-dir data/enroll_raw          (sub-folder name = speaker name)
   meeting-transcriber speakers | delete-speaker 이용욱 | delete-raw-audio 이용욱 | reenroll 이용욱
   meeting-transcriber diagnostics
+  meeting-transcriber azure-setup <portal URL | endpoint>  (store endpoint + key in .env, then test)
   meeting-transcriber azure-check                         (Azure MAI-Transcribe connectivity test)
   meeting-transcriber ui
 """
@@ -167,6 +168,27 @@ def cmd_azure_check(cfg, args) -> int:
     return 0
 
 
+def cmd_azure_setup(cfg, args) -> int:
+    import getpass
+
+    from .asr.azure_mai import normalize_endpoint
+    from .config import azure_speech_key, save_env_values
+
+    base, notes = normalize_endpoint(args.endpoint)
+    values = {"AZURE_SPEECH_ENDPOINT": base}
+    # the key is read interactively so it never lands in shell history
+    key = getpass.getpass("AZURE_SPEECH_KEY (KEY 1, 입력 내용은 표시되지 않음, Enter=기존 값 유지): ").strip()
+    if key:
+        values["AZURE_SPEECH_KEY"] = key
+    elif cfg.asr.azure.auth == "key" and not azure_speech_key():
+        raise UserFacingError("키가 입력되지 않았습니다. 포털 > 리소스 > 키 및 엔드포인트의 KEY 1 을 입력하세요.")
+    path = save_env_values(values)
+    print(f"저장 완료: {base} → {path}")
+    for n in notes:
+        print(f"  ℹ {n}")
+    return cmd_azure_check(cfg, args)
+
+
 def cmd_diagnostics(cfg, args) -> int:
     from .device import collect_diagnostics
 
@@ -225,6 +247,9 @@ def build_parser() -> argparse.ArgumentParser:
     r.add_argument("speaker")
     r.set_defaults(func=cmd_reenroll)
     sub.add_parser("diagnostics", help="CUDA/GPU/버전 진단").set_defaults(func=cmd_diagnostics)
+    az = sub.add_parser("azure-setup", help="Azure 엔드포인트(포털 리소스 URL 가능)+키를 .env 에 저장 후 연결 테스트")
+    az.add_argument("endpoint", help="https://<리소스>.cognitiveservices.azure.com, 포털 리소스 URL 또는 리소스 이름")
+    az.set_defaults(func=cmd_azure_setup)
     sub.add_parser("azure-check", help="Azure MAI-Transcribe 연결 테스트 (2초 음성 전송)").set_defaults(
         func=cmd_azure_check)
     u = sub.add_parser("ui", help="Gradio UI 실행")

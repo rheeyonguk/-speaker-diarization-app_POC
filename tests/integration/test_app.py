@@ -100,3 +100,25 @@ def test_azure_check_endpoint_reports_missing_config(app_url, monkeypatch):
     monkeypatch.delenv("AZURE_SPEECH_ENDPOINT", raising=False)
     msg = Client(app_url, verbose=False).predict(api_name="/azure_check")
     assert msg.startswith("❌") and "AZURE_SPEECH_ENDPOINT" in msg
+
+
+def test_azure_settings_saved_locally_then_tested(app_url, tmp_path, monkeypatch):
+    from gradio_client import Client
+
+    from azure_stub import KEY, AzureSpeechStub
+
+    monkeypatch.setenv("MT_HOME", str(tmp_path))  # .env goes to tmp, not the repo
+    monkeypatch.delenv("AZURE_SPEECH_ENDPOINT", raising=False)
+    monkeypatch.delenv("AZURE_SPEECH_KEY", raising=False)
+    client = Client(app_url, verbose=False)
+    msg, *_ = client.predict("", "", api_name="/azure_save")
+    assert "입력하세요" in msg and not (tmp_path / ".env").exists()
+    with AzureSpeechStub() as stub:
+        msg, endpoint, key_box = client.predict(stub.url, KEY, api_name="/azure_save")
+    assert "저장 완료" in msg and "✅ Azure MAI 연결 성공" in msg, msg
+    assert KEY not in msg
+    # gradio_client hands back gr.update(...) payloads as dicts
+    assert (key_box.get("value") if isinstance(key_box, dict) else key_box) == ""
+    assert (endpoint.get("value") if isinstance(endpoint, dict) else endpoint) == stub.url
+    saved = (tmp_path / ".env").read_text(encoding="utf-8")
+    assert f"AZURE_SPEECH_ENDPOINT={stub.url}" in saved and f"AZURE_SPEECH_KEY={KEY}" in saved
