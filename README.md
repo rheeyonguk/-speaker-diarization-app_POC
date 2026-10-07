@@ -401,6 +401,7 @@ src/meeting_transcriber/
   evaluation/     metrics.py  calibration.py  report.py  synthetic.py
 scripts/          prefetch_models.py  evaluate.py  calibrate_threshold.py  make_synthetic_meeting.py
 tests/unit, tests/integration, tests/scenarios(A–G 매니페스트·가이드)
+tests/local_models.py               오프라인 E2E용 로컬 모델 생성기(실제 구조·랜덤 가중치)
 data/speakers/    (git-ignore) 음성 프로필
 outputs/          (git-ignore) 결과물
 ```
